@@ -1,0 +1,46 @@
+---
+title: "Pipeline for methylation assay"
+author: Stefano Roncelli
+date: "`r format(Sys.time(), '%d/%m/%y')`"
+output: pdf_document
+---
+#Step 1
+```{r Step-1, message = FALSE, warning = FALSE}
+setwd('.')
+suppressMessages(library(minfi))
+baseDir <- ('./Input_data')
+targets <- read.metharray.sheet(baseDir)
+RGset <- read.metharray.exp(targets = targets)
+save(RGset, file = "RGset.RData")
+RGset
+```
+```{r Step-2, message = FALSE, warning = FALSE}
+Red <- data.frame(getRed(RGset))
+Green <- data.frame(getGreen(RGset))
+```
+
+Fill the following table: what are the Red and Green fluorescences for the address assigned to you?
+Optional: check in the manifest file if the address corresponds to a Type I or a Type II probe and, in case of Type I probe, report its color.
+```{r Step-3, message = FALSE, warning = FALSE}
+
+probes_I <- getProbeInfo(RGset, type = 'I')
+probes_II <- getProbeInfo(RGset, type = 'II')
+probes_I[probes_I$AddressA == 10633381,]
+probes_I[probes_I$AddressB == 10633381,]
+probes_II[probes_II$AddressA == 10633381,]
+Red[rownames(Red) == '10633381',]
+Green[rownames(Green) == '10633381',]
+```
+We can see it's a type I infinium with the Red channel.
+
+| Sample               | Row | Column | Red Intensity | Green Intensity | Type | Color |
+|----------------------|-----|--------|---------------|-----------------|------|-------|
+| 5775278051           | 1   | 1      | 1852          | 458             | I    | Red   |
+| 5775278051           | 4   | 2      | 1694          | 631             | I    | Red   |
+| 5775278078           | 2   | 1      | 1354          | 358             | I    | Red   |
+| 5775278078           | 5   | 1      | 1091          | 396             | I    | Red   |
+| 5775278078           | 5   | 2      | 1131          | 424             | I    | Red   |
+| 5930514034           | 1   | 2      | 796           | 302             | I    | Red   |
+| 5930514035           | 4   | 2      | 894           | 354             | I    | Red   |
+| 5930514035           | 6   | 2      | 1149          | 479             | I    | Red   |
+
