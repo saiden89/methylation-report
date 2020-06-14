@@ -4,7 +4,13 @@ author: Stefano Roncelli
 date: "`r format(Sys.time(), '%d/%m/%y')`"
 output: pdf_document
 ---
-#Step 1
+Student N° 26
+Address 10633381
+p-value threshold: 0.01
+normalization preprocessSWAN
+Mann_whitney test
+
+Load raw data with minfi and create an object called RGset storing the RGChannelSet object
 ```{r Step-1, message = FALSE, warning = FALSE}
 setwd('.')
 suppressMessages(library(minfi))
@@ -14,6 +20,8 @@ RGset <- read.metharray.exp(targets = targets)
 save(RGset, file = "RGset.RData")
 RGset
 ```
+
+Create the dataframes Red and Green to store the red and green fluorescences respectively
 ```{r Step-2, message = FALSE, warning = FALSE}
 Red <- data.frame(getRed(RGset))
 Green <- data.frame(getGreen(RGset))
@@ -43,4 +51,45 @@ We can see it's a type I infinium with the Red channel.
 | 5930514034           | 1   | 2      | 796           | 302             | I    | Red   |
 | 5930514035           | 4   | 2      | 894           | 354             | I    | Red   |
 | 5930514035           | 6   | 2      | 1149          | 479             | I    | Red   |
+
+Step 4
+Create the object MSet.raw
+
+Step 5
+Perform the following quality checks and provide a brief comment to each step:
+- QCplot
+- check the intensity of negative controls using minfi
+- calculate detection pValues; for each sample, how many probes have a detection p-value higher than the threshold assigned to each student?
+Step 6
+Calculate raw beta and M values and plot the densities of mean methylation values, dividing the samples in DS and WT
+(suggestion: subset the beta and M values matrixes in order to retain DS or WT subjects and apply the function mean to the 2 subsets).
+
+Step 7
+Normalize the data using the function assigned to each student and compare raw data and normalized data.
+Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
+Provide a short comment regarding the changes you observe.
+
+Step 8
+Perform a PCA on the beta matrix generated in step 7. Comment the plot.
+
+Step 9
+Using the matrix of normalized beta values generated in step 7, identify differentially methylated probes between group DS and group WT using the functions assigned to each student.
+Note; it can take several minutes; if you encounter any problem you can run the differential methylated analysis only on a subset of probes (for example those on chromosome 1, 18 and 21)
+
+Step 10
+Apply multiple test correction and set a significant threshold of 0.05.
+How many probes do you identify as differentially methylated considering nominal pValues?
+How many after Bonferroni correction?
+How many after BH correction?
+
+Step 11
+Produce an heatmap of the top 100 differentially mehtylated probes
+
+Step 12
+Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
+
+Step 13 (optional)
+As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
+Do you see a very clear difference between the samples?
+How many differentially methylated probes do you find on chromosome 21?
 
