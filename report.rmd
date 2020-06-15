@@ -11,7 +11,7 @@ normalization preprocessSWAN
 Mann_whitney test
 
 Load raw data with minfi and create an object called RGset storing the RGChannelSet object
-```{r Step-1, message = FALSE, warning = FALSE}
+```{r step-1, message = FALSE, warning = FALSE}
 setwd('.')
 suppressMessages(library(minfi))
 baseDir <- ('./Input_data')
@@ -21,21 +21,25 @@ save(RGset, file = "RGset.RData")
 RGset
 ```
 
+# Step 2
 Create the dataframes Red and Green to store the red and green fluorescences respectively
-```{r Step-2, message = FALSE, warning = FALSE}
+```{r step-2, message = FALSE, warning = FALSE}
 Red <- data.frame(getRed(RGset))
 Green <- data.frame(getGreen(RGset))
 ```
 
+# Step 3
 Fill the following table: what are the Red and Green fluorescences for the address assigned to you?
 Optional: check in the manifest file if the address corresponds to a Type I or a Type II probe and, in case of Type I probe, report its color.
-```{r Step-3, message = FALSE, warning = FALSE}
 
-probes_I <- getProbeInfo(RGset, type = 'I')
-probes_II <- getProbeInfo(RGset, type = 'II')
-probes_I[probes_I$AddressA == 10633381,]
-probes_I[probes_I$AddressB == 10633381,]
-probes_II[probes_II$AddressA == 10633381,]
+For the optional procedure we will create two dataframes `type_I` and `type_II`, which will be reused later on for the normalization.
+```{r step-3, message = FALSE, warning = FALSE}
+
+type_I <- getProbeInfo(RGset, type = 'I')
+type_II <- getProbeInfo(RGset, type = 'II')
+type_I[type_I$AddressA == 10633381,]
+type_I[type_I$AddressB == 10633381,]
+type_II[type_II$AddressA == 10633381,]
 Red[rownames(Red) == '10633381',]
 Green[rownames(Green) == '10633381',]
 ```
@@ -52,20 +56,165 @@ We can see it's a type I infinium with the Red channel.
 | 5930514035           | 4   | 2      | 894           | 354             | I    | Red   |
 | 5930514035           | 6   | 2      | 1149          | 479             | I    | Red   |
 
-Step 4
+# Step 4
 Create the object MSet.raw
+For the creation of the MSet.raw we use the preprocessRaw function
+```{r step-4}
+MSet.raw <- preprocessRaw(RGset)
+```
 
-Step 5
+# Step 5
 Perform the following quality checks and provide a brief comment to each step:
 - QCplot
+
+```{r step-5-a}
+qc <- getQC(MSet.raw)
+plotQC(qc)
+```
+
 - check the intensity of negative controls using minfi
+
+```{r step-5-b}
+controlStripPlot(RGset, controls = "NEGATIVE")
+```
 - calculate detection pValues; for each sample, how many probes have a detection p-value higher than the threshold assigned to each student?
-Step 6
+The function to use is detectionP, which takes as input the RGset.
+
+```{r step-5-c, message=FALSE, warning=FALSE}
+detection_p_value <- detectionP(RGset)
+dim(detection_p_value)
+failed_probes <- detection_p_value > 0.01
+table(failed_probes)
+summary(failed_probes)
+```
+Tee following table summarizes the failed positions
+| Sample | Group |      Slide | Row | Col  | Failed probes (p-value > 0.01) |
+|--------|-------|-----------:|-----|------|-------------------------------:|
+| 1020   | DS    | 5775278051 | 1   | 1    |                            323 |
+| 1036   | DS    | 5775278051 | 4   | 2    |                            260 |
+| 3038   | WT    | 5775278078 | 2   | 1    |                            312 |
+| 3042   | WT    | 5775278078 | 5   | 1    |                            485 |
+| 3052   | WT    | 5775278078 | 5   | 2    |                            465 |
+| 1016   | DS    | 5930514034 | 1   | 2    |                            123 |
+| 1029   | DS    | 5930514035 | 4   | 2    |                             60 |
+| 3029   | WT    | 5930514035 | 6   | 2    |                            149 |
+
+
+# Step 6
 Calculate raw beta and M values and plot the densities of mean methylation values, dividing the samples in DS and WT
 (suggestion: subset the beta and M values matrixes in order to retain DS or WT subjects and apply the function mean to the 2 subsets).
 
-Step 7
+For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
+```{r step-6-a}
+beta_value <- getBeta(MSet.raw)
+summary(beta_value)
+M_value <- getM(MSet.raw)
+summary(M_value)
+```
+We now subset `beta_value` and `M_value` to obtain the Wild-Type (`WT`) and Down-Syndrome (`DS`).
+```{r step-6-b}
+DS_status <- targets$Group == 'DS'
+summary(DS_status)
+beta_value_DS <- beta_value[, DS_status]
+beta_value_WT <- beta_value[, !DS_status]
+M_value_DS <- M_value[, DS_status]
+M_value_WT <- M_value[, !DS_status]
+```
+
+Computing the mean for $\beta$ and $M$ subsets and both groups
+```{r step-6-c}
+beta_WT_mean_distribution <-
+  beta_value_WT %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+beta_DS_mean_distribution <-
+  beta_value_DS %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+M_WT_mean_distribution <-
+  M_value_WT %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+M_DS_mean_distribution <-
+  M_value_DS %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+
+par(mfrow = c(1, 2))
+plot(beta_WT_mean_distribution, main = "Density of Beta Values", col = "orange")
+lines(beta_DS_mean_distribution, main = "Density of Beta Values", col = "green")
+plot(M_WT_mean_distribution, main = "Density of M Values", col = "orange")
+lines(M_DS_mean_distribution, main = "Density of M Values", col = "green")
+```
+# Step 7
 Normalize the data using the function assigned to each student and compare raw data and normalized data.
+
+Preparation of distributions of Mean and Standard Deviation for plotting
+```{r step-7-a}
+beta_type_I <- beta_value[rownames(beta_value) %in% type_I$Name, ]
+beta_type_II <- beta_value[rownames(beta_value) %in% type_II$Name, ]
+
+beta_type_I_mean_d <-
+  beta_type_I %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+beta_type_II_mean_d <-
+  beta_type_II %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+beta_type_I_sd_d <-
+  beta_type_II %>%
+    apply(1, sd, na.rm = T) %>%
+    density()
+beta_type_II_sd_d <-
+  beta_type_II %>%
+    apply(1, sd, na.rm = T) %>%
+    density()
+
+```
+Preparation of normalized data (preprocessSWAN)
+```{r step-7-c}
+beta_norm <-
+  RGset %>%
+  preprocessSWAN() %>%
+    getBeta()
+
+beta_I_norm_mean_d <-
+  beta_value[rownames(beta_norm) %in% type_I$Name, ] %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+
+beta_II_norm_mean_d <-
+  beta_value[rownames(beta_norm) %in% type_II$Name, ] %>%
+    apply(1, mean, na.rm = T) %>%
+    density()
+
+beta_I_norm_sd_d <-
+  beta_value[rownames(beta_norm) %in% type_I$Name, ] %>%
+    apply(1, sd, na.rm = T) %>%
+    density()
+
+beta_II_norm_sd_d <-
+  beta_value[rownames(beta_norm) %in% type_II$Name, ] %>%
+    apply(1, sd, na.rm = T) %>%
+    density()
+```
+Plotting the obtained distributions
+```{r step-7-c}
+par(mfrow=c(2,3))
+plot(beta_I_mean_distribution, col = "blue",main = "normalized beta")
+lines(beta_II_mean_distri, col = "red")
+plot(beta_I_sd_d, col="blue", main = "normalized sd")
+lines(beta_II_sd_d, col = "red")
+boxplot(beta_normalized)
+par(mfrow=c(2,3))
+plot(beta_I_norm_mean_d, col = "blue",main = "normalized beta")
+lines(beta_II_norm_mean_d, col = "red")
+plot(beta_I_norm_sd_d, col="blue", main = "normalized sd")
+lines(beta_II_norm_sd_d, col = "red")
+boxplot(beta_normalized)
+```
+
 Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
 Provide a short comment regarding the changes you observe.
 
