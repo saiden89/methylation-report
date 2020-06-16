@@ -14,6 +14,7 @@ Load raw data with minfi and create an object called RGset storing the RGChannel
 ```{r step-1, message = FALSE, warning = FALSE}
 setwd('.')
 suppressMessages(library(minfi))
+suppressMessages(library(magrittr))
 baseDir <- ('./Input_data')
 targets <- read.metharray.sheet(baseDir)
 RGset <- read.metharray.exp(targets = targets)
@@ -87,9 +88,10 @@ failed_probes <- detection_p_value > 0.01
 table(failed_probes)
 summary(failed_probes)
 ```
-Tee following table summarizes the failed positions
+The following table summarizes the failed positions
+
 | Sample | Group |      Slide | Row | Col  | Failed probes (p-value > 0.01) |
-|--------|-------|-----------:|-----|------|-------------------------------:|
+|--------|-------|------------|-----|------|--------------------------------|
 | 1020   | DS    | 5775278051 | 1   | 1    |                            323 |
 | 1036   | DS    | 5775278051 | 4   | 2    |                            260 |
 | 3038   | WT    | 5775278078 | 2   | 1    |                            312 |
@@ -105,7 +107,7 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 (suggestion: subset the beta and M values matrixes in order to retain DS or WT subjects and apply the function mean to the 2 subsets).
 
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
-```{r step-6-a}
+```{r step-6-a, message = FALSE}
 beta_value <- getBeta(MSet.raw)
 summary(beta_value)
 M_value <- getM(MSet.raw)
@@ -123,113 +125,164 @@ M_value_WT <- M_value[, !DS_status]
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
 ```{r step-6-c}
-beta_WT_mean_distribution <-
-  beta_value_WT %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-beta_DS_mean_distribution <-
-  beta_value_DS %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-M_WT_mean_distribution <-
-  M_value_WT %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-M_DS_mean_distribution <-
-  M_value_DS %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-
 par(mfrow = c(1, 2))
-plot(beta_WT_mean_distribution, main = "Density of Beta Values", col = "orange")
-lines(beta_DS_mean_distribution, main = "Density of Beta Values", col = "green")
-plot(M_WT_mean_distribution, main = "Density of M Values", col = "orange")
-lines(M_DS_mean_distribution, main = "Density of M Values", col = "green")
+
+beta_value_WT %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
+
+beta_value_DS %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        lines(col = "blue")
+
+M_value_WT %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        plot(main = "Density of M values", col = "green")
+
+M_value_DS %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        lines(col = "blue")
 ```
 # Step 7
 Normalize the data using the function assigned to each student and compare raw data and normalized data.
+Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
+Provide a short comment regarding the changes you observe.
 
-Preparation of distributions of Mean and Standard Deviation for plotting
-```{r step-7-a}
+Producing the plots
+```{r step-7-a, message = FALSE}
 beta_type_I <- beta_value[rownames(beta_value) %in% type_I$Name, ]
 beta_type_II <- beta_value[rownames(beta_value) %in% type_II$Name, ]
 
-beta_type_I_mean_d <-
-  beta_type_I %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-beta_type_II_mean_d <-
-  beta_type_II %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-beta_type_I_sd_d <-
-  beta_type_II %>%
-    apply(1, sd, na.rm = T) %>%
-    density()
-beta_type_II_sd_d <-
-  beta_type_II %>%
-    apply(1, sd, na.rm = T) %>%
-    density()
-
-```
-Preparation of normalized data (preprocessSWAN)
-```{r step-7-c}
+# Normalization with preprocessSWAN
 beta_norm <-
   RGset %>%
   preprocessSWAN() %>%
     getBeta()
 
-beta_I_norm_mean_d <-
-  beta_value[rownames(beta_norm) %in% type_I$Name, ] %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
+beta_type_I_norm <- beta_norm[rownames(beta_norm) %in% type_I$Name, ]
+beta_type_II_norm <- beta_norm[rownames(beta_norm) %in% type_II$Name, ]
 
-beta_II_norm_mean_d <-
-  beta_value[rownames(beta_norm) %in% type_II$Name, ] %>%
-    apply(1, mean, na.rm = T) %>%
-    density()
-
-beta_I_norm_sd_d <-
-  beta_value[rownames(beta_norm) %in% type_I$Name, ] %>%
-    apply(1, sd, na.rm = T) %>%
-    density()
-
-beta_II_norm_sd_d <-
-  beta_value[rownames(beta_norm) %in% type_II$Name, ] %>%
-    apply(1, sd, na.rm = T) %>%
-    density()
-```
-Plotting the obtained distributions
-```{r step-7-c}
 par(mfrow=c(2,3))
-plot(beta_I_mean_distribution, col = "blue",main = "normalized beta")
-lines(beta_II_mean_distri, col = "red")
-plot(beta_I_sd_d, col="blue", main = "normalized sd")
-lines(beta_II_sd_d, col = "red")
-boxplot(beta_normalized)
-par(mfrow=c(2,3))
-plot(beta_I_norm_mean_d, col = "blue",main = "normalized beta")
-lines(beta_II_norm_mean_d, col = "red")
-plot(beta_I_norm_sd_d, col="blue", main = "normalized sd")
-lines(beta_II_norm_sd_d, col = "red")
-boxplot(beta_normalized)
+# Plotting raw beta for type I
+beta_type_I %>%
+  apply(1, mean, na.rm = T) %>%
+  density() %T>%
+  plot(main = expression(paste("Raw ", beta)), col = "blue")
+
+# Plotting raw beta for type II
+beta_type_II %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        lines(col = "red")
+
+# Plotting raw standard deviation for type I
+beta_type_I %>%
+        apply(1, sd, na.rm = T) %>%
+        density() %T>%
+        plot(main = expression(paste("Raw standard deviation for ", beta, " values")), col = "blue")
+
+# Plotting raw standard deviation for type II
+beta_type_II %>%
+        apply(1, sd, na.rm = T) %>%
+        density() %T>%
+        lines(col = "red")
+
+# Plotting bowplot for raw beta
+boxplot(beta_value)
+
+# Plotting the normlized beta mean for type
+beta_type_I_norm %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        plot(col = "blue", main = "normalized beta")
+
+# Plotting the normalized beta for type II probes
+beta_type_II_norm %>%
+        apply(1, mean, na.rm = T) %>%
+        density() %T>%
+        lines(col = "red")
+
+# Plotting the normalized standard deviation for type I probes
+beta_type_I_norm %>%
+        apply(1, sd, na.rm = T) %>%
+        density() %T>%
+        plot(col = "blue", main = "normalized standard deviation")
+
+# Plotting the normalized standard deviation for type II probes
+beta_type_II_norm %>%
+        apply(1, sd, na.rm = T) %>%
+        density() %T>%
+        lines(col = "red")
+
+# Plotting boxplot for normalized beta value
+boxplot(beta_norm)
 ```
 
-Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
-Provide a short comment regarding the changes you observe.
 
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
+```{r}
+pca_results <-
+  beta_norm %>%
+    t() %>%
+    prcomp(scale = T) %T>%
+    summary() %T>%
+    plot()
+```
+We can see how the 8th component doesn't carry any variance.
+
+```{r step-8-b}
+palette("default")
+groups <- factor(targets$Group)
+plot(pca_results$x[, 1], pca_results$x[, 2],
+  pch = 16,
+  col = groups,
+  xlab = "PC1",
+  ylab = "PC2"
+)
+legend(
+  "bottomleft",
+  legend = levels(groups),
+  col = c(1:nlevels(groups)),
+  pch = 16
+)
+```
 Step 9
 Using the matrix of normalized beta values generated in step 7, identify differentially methylated probes between group DS and group WT using the functions assigned to each student.
 Note; it can take several minutes; if you encounter any problem you can run the differential methylated analysis only on a subset of probes (for example those on chromosome 1, 18 and 21)
 
+
+```{r}
+mann_whitney <- function(x) {
+  wilcox <- wilcox.test(x ~ groups)
+  return(wilcox$p.value)
+}
+pval_raw <- apply(beta_norm, 1, mann_whitney)
+summary(pval_raw)
+length(pval_raw)
+```
+
 Step 10
-Apply multiple test correction and set a significant threshold of 0.05.
+Apply multiple test correction and set a significant threshold of 0.01.
 How many probes do you identify as differentially methylated considering nominal pValues?
 How many after Bonferroni correction?
 How many after BH correction?
+```{r step-10}
+beta_rawp_df <- data.frame(beta_norm, pval_raw)
+beta_rawp_df_sorted <- beta_rawp_df[order(beta_rawp_df$pval_raw), ]
+summary(beta_rawp_df_sorted)
+raw_p_sorted <- beta_rawp_df_sorted[, 9]
+summary(raw_p_sorted)
+BH_p <- p.adjust(raw_p_sorted, "BH")
+summary(BH_p)
+Bonf_p <- p.adjust(raw_p_sorted, "bonferroni")
+summary(Bonf_p)
+```
 
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
