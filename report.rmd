@@ -1,9 +1,12 @@
 ---
-title: "Pipeline for methylation assay"
+title: "A fundamental pipeline for methylation data analysis"
 author: Stefano Roncelli
 date: "`r format(Sys.time(), '%d/%m/%y')`"
 output: pdf_document
 ---
+# Introduction
+In this work we apply some basic concepts for methylation analysis using the R programming language.
+
 Student N° 26
 Address 10633381
 p-value threshold: 0.01
@@ -262,7 +265,7 @@ mann_whitney <- function(x) {
   wilcox <- wilcox.test(x ~ groups)
   return(wilcox$p.value)
 }
-pval_raw <- apply(beta_norm, 1, mann_whitney)
+pval_raw <- apply(beta_norm, 1,mann_whitney)
 summary(pval_raw)
 length(pval_raw)
 ```
@@ -273,22 +276,147 @@ How many probes do you identify as differentially methylated considering nominal
 How many after Bonferroni correction?
 How many after BH correction?
 ```{r step-10}
-beta_rawp_df <- data.frame(beta_norm, pval_raw)
-beta_rawp_df_sorted <- beta_rawp_df[order(beta_rawp_df$pval_raw), ]
-summary(beta_rawp_df_sorted)
-raw_p_sorted <- beta_rawp_df_sorted[, 9]
-summary(raw_p_sorted)
-BH_p <- p.adjust(raw_p_sorted, "BH")
-summary(BH_p)
-Bonf_p <- p.adjust(raw_p_sorted, "bonferroni")
-summary(Bonf_p)
+beta_norm_p_raw <- data.frame(beta_norm, pval_raw)
+beta_norm_p_raw <- beta_norm_p_raw[order(beta_norm_p_raw$pval_raw), ]
+summary(beta_norm_p_raw)
+raw_p_value <- beta_norm_p_raw[, 9]
+summary(raw_p_value)
+BH_p_value <- p.adjust(raw_p_value, "BH")
+summary(BH_p_value)
+bonferroni_p_value <- p.adjust(raw_p_value, "bonferroni")
+summary(bonferroni_p_value)
 ```
 
+```{r step-10}
+pval_complete <- data.frame(raw_p_value, BH_p_value, bonferroni_p_value)
+boxplot(pval_complete)
+```
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
+```{r step-11}
+plot_data = as.matrix(beta_norm_p_raw[1:100, 1:8])
+colorbar <- c("orange", "orange", "#008080", "#008080", "#008080", "orange", "orange", "#008080")
+palette <- brewer.pal(100, name = "Greys")
+par(mfrow = c(1, 3))
+
+# complete linkage
+heatmap.2(plot_data,
+          col = palette,
+          Rowv = T,
+          Colv = T,
+          dendrogram = "both",
+          key = T,
+          ColSideColors = colorbar,
+          density.info = "none",
+          trace = "none",
+          scale = "none",
+          symm = F,
+          main = "Normalized Beta values - complete linkage")
+
+# Single linkage
+heatmap.2(plot_data,
+          col = palette,
+          Rowv = T,
+          Colv = T,
+          hclustfun = function(x) hclust(x, method = 'single'),
+          dendrogram = "both",
+          key = T,
+          ColSideColors = colorbar,
+          density.info = "none",
+          trace = "none",
+          scale = "none",
+          symm = F,
+          main = "Norm Beta values (Method: single linkage)")
+# averge linkage
+heatmap.2(plot_data,
+          col = palette,
+          Rowv = T,
+          Colv = T, hclustfun = function(x) hclust(x, method = 'average'),
+          dendrogram = "both",
+          key = T, ColSideColors = colorbar,
+          density.info = "none",
+          trace = "none",
+          scale = "none",
+          symm = F,
+          main = "Norm Beta values (Method: average linkage)")
+
+```
+
 
 Step 12
 Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
+```{r volcano-dataprep}
+NormBeta <- beta_norm_p_raw[, 1:8]
+dim(NormBeta)
+NormBeta_DS <- NormBeta[, targets$Group == "DS"]
+dim(NormBeta_DS)
+meanNormBeta_DS <- apply(NormBeta_DS, 1, mean)
+NormBeta_WT <- NormBeta[, targets$Group == "WT"]
+dim(NormBeta_WT)
+meanNormBeta_WT <- apply(NormBeta_WT, 1, mean)
+delta <- meanNormBeta_DS-meanNormBeta_WT
+
+volplot_data <- data.frame(delta, -log10(beta_norm_p_raw$pval_raw))
+Highlight <- volplot_data[abs(volplot_data[,1])>0.1 & volplot_data[,2]>(-log10(0.01)),]
+
+plot(volplot_data[, 1], volplot_data[, 2], pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
+abline(a = -log10(0.05), b = 0, col = "red")
+points(Highlight[, 1], Highlight[, 2], pch = 16, cex = 0.7, col = "red")
+```
+```{r volcano-plot}
+Highlight <- volplot_data[abs(volplot_data[, 1]) > 0.1 & volplot_data[, 2] > (-log10(0.01)),]
+
+plot(volplot_data[, 1], volplot_data[, 2], pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
+abline(a = -log10(0.01), b = 0, col = "red")
+points(Highlight[, 1], Highlight[, 2], pch = 16, cex = 0.7, col = "red")
+```
+```{r manhattan-dataprep}
+suppressMessages(library(gap))
+manhattan_data <-data.frame(rownames(beta_norm_p_raw), pval_complete)
+colnames(manhattan_data)[1] <- "Name"
+
+# we need to annotate the data
+annotation <- getAnnotation(RGset)
+manhattan_data <- merge(manhattan_data, annotation, by="Name")
+manhattan_data <- droplevels(manhattan_data)
+
+#manhattan_data <- data.frame(rownames(beta_norm_p_raw), pval_complete) %>%
+ #       set_colnames(c("Name", colnames(pval_complete))) %>%
+  #      merge(annotation, by = "Name") %>%
+   #     droplevels()
+
+
+chr_vect <- factor(manhattan_data$chr, levels = c("chr1",
+                                                  "chr2",
+                                                  "chr3",
+                                                  "chr4",
+                                                  "chr5",
+                                                  "chr6",
+                                                  "chr7",
+                                                  "chr8",
+                                                  "chr9",
+                                                  "chr10",
+                                                  "chr11",
+                                                  "chr12",
+                                                  "chr13",
+                                                  "chr14",
+                                                  "chr15",
+                                                  "chr16",
+                                                  "chr17",
+                                                  "chr18",
+                                                  "chr19",
+                                                  "chr20",
+                                                  "chr21",
+                                                  "chr22",
+                                                  "chrX",
+                                                  "chrY"))
+manhattan_data_input <- data.frame(chr_vect, manhattan_data$pos, manhattan_data$raw_p_value)
+```
+```{r}
+palette <- rainbow(24)
+
+mhtplot(manhattan_data_input, control = mht.control(colors = palette), ylim = c(0,3))
+```
 
 Step 13 (optional)
 As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
