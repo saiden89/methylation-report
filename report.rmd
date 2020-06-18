@@ -16,8 +16,10 @@ Mann_whitney test
 Load raw data with minfi and create an object called RGset storing the RGChannelSet object
 ```{r step-1, message = FALSE, warning = FALSE}
 setwd('.')
-suppressMessages(library(minfi))
-suppressMessages(library(magrittr))
+library(minfi)
+library(magrittr)
+library(RColorBrewer)
+library(gplots)
 baseDir <- ('./Input_data')
 targets <- read.metharray.sheet(baseDir)
 RGset <- read.metharray.exp(targets = targets)
@@ -111,45 +113,62 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
 ```{r step-6-a, message = FALSE}
-beta_value <- getBeta(MSet.raw)
-summary(beta_value)
-M_value <- getM(MSet.raw)
-summary(M_value)
+intensities <- getBeta(MSet.raw) %>%
+        melt(value.name = "RawBeta", varnames = c("ID", "Slide"))
+M_values <- getM(MSet.raw) %>%
+        melt()
+intensities["RawM"] <- M_values$value
+summary(intensities)
 ```
-We now subset `beta_value` and `M_value` to obtain the Wild-Type (`WT`) and Down-Syndrome (`DS`).
+We now add a columnt for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
 ```{r step-6-b}
-DS_status <- targets$Group == 'DS'
-summary(DS_status)
-beta_value_DS <- beta_value[, DS_status]
-beta_value_WT <- beta_value[, !DS_status]
-M_value_DS <- M_value[, DS_status]
-M_value_WT <- M_value[, !DS_status]
+slide_DS <- colnames(RGset[,targets$Group == "WT"])
+intensities["status"] <- ifelse(intensities$Slide %in% slide_DS, "DS", "WT")
 ```
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
 ```{r step-6-c}
 par(mfrow = c(1, 2))
 
-beta_value_WT %>%
-        apply(1, mean, na.rm = T) %>%
+intensities %>%
+        filter(status == "WT") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(RawBeta, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
-
-beta_value_DS %>%
-        apply(1, mean, na.rm = T) %>%
+intensities %>%
+        filter(status == "DS") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(RawBeta, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        lines(col = "blue")
-
-M_value_WT %>%
-        apply(1, mean, na.rm = T) %>%
+        lines(col = "green")
+intensities %>%
+        filter(status == "WT") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(RawM, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        plot(main = "Density of M values", col = "green")
-
-M_value_DS %>%
-        apply(1, mean, na.rm = T) %>%
+        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
+intensities %>%
+        filter(status == "DS") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(RawM, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        lines(col = "blue")
+        lines(col = "green")
+
 ```
+
 # Step 7
 Normalize the data using the function assigned to each student and compare raw data and normalized data.
 Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
@@ -157,75 +176,114 @@ Provide a short comment regarding the changes you observe.
 
 Producing the plots
 ```{r step-7-a, message = FALSE}
-beta_type_I <- beta_value[rownames(beta_value) %in% type_I$Name, ]
-beta_type_II <- beta_value[rownames(beta_value) %in% type_II$Name, ]
+intensities["Infinium"] <- ifelse(intensities$ID %in% type_I$Name, "I", "II")
 
 # Normalization with preprocessSWAN
-beta_norm <-
-  RGset %>%
-  preprocessSWAN() %>%
-    getBeta()
-
-beta_type_I_norm <- beta_norm[rownames(beta_norm) %in% type_I$Name, ]
-beta_type_II_norm <- beta_norm[rownames(beta_norm) %in% type_II$Name, ]
+intensities["NormBeta"] <-
+        RGset %>%
+                preprocessSWAN() %>%
+                getBeta() %>%
+                melt() %>%
+                select(value)
 
 par(mfrow=c(2,3))
 # Plotting raw beta for type I
-beta_type_I %>%
-  apply(1, mean, na.rm = T) %>%
-  density() %T>%
-  plot(main = expression(paste("Raw ", beta)), col = "blue")
+intensities %>%
+        filter(Infinium == "I") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(RawBeta, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
+        density() %T>%
+        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
 # Plotting raw beta for type II
-beta_type_II %>%
-        apply(1, mean, na.rm = T) %>%
+intensities %>%
+        filter(Infinium == "II") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(RawBeta, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        lines(col = "red")
+        lines(col = "blue")
 
-# Plotting raw standard deviation for type I
-beta_type_I %>%
-        apply(1, sd, na.rm = T) %>%
+# Plotting raw beta standard deviatio for type I
+intensities %>%
+        filter(Infinium == "I") %>%
+        group_by(ID) %>%
+        summarise(sd = sd(RawBeta, na.rm = T)) %>%
+        select(sd) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        plot(main = expression(paste("Raw standard deviation for ", beta, " values")), col = "blue")
+        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
-# Plotting raw standard deviation for type II
-beta_type_II %>%
-        apply(1, sd, na.rm = T) %>%
+# Plotting raw beta standard deviatio for type II
+intensities %>%
+        filter(Infinium == "II") %>%
+        group_by(ID) %>%
+        summarise(sd = sd(RawBeta, na.rm = T)) %>%
+        select(sd) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        lines(col = "red")
+        lines(col = "blue")
+# Plotting Boxplot for Raw Data
+intensities %>%
+        ggplot(aes(x = Slide, y = RawBeta)) +
+        geom_boxplot()
 
-# Plotting bowplot for raw beta
-boxplot(beta_value)
-
-# Plotting the normlized beta mean for type
-beta_type_I_norm %>%
-        apply(1, mean, na.rm = T) %>%
+# Plotting normalized beta for type I
+intensities %>%
+        filter(Infinium == "I") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(NormBeta, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        plot(col = "blue", main = "normalized beta")
+        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
-# Plotting the normalized beta for type II probes
-beta_type_II_norm %>%
-        apply(1, mean, na.rm = T) %>%
+# Plotting normalized beta for type II
+intensities %>%
+        filter(Infinium == "II") %>%
+        group_by(ID) %>%
+        summarise(mean = mean(NormBeta, na.rm = T)) %>%
+        select(mean) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        lines(col = "red")
+        lines(col = "blue")
 
-# Plotting the normalized standard deviation for type I probes
-beta_type_I_norm %>%
-        apply(1, sd, na.rm = T) %>%
+# Plotting normalized beta standard deviation for type I
+intensities %>%
+        filter(Infinium == "I") %>%
+        group_by(ID) %>%
+        summarise(sd = sd(NormBeta, na.rm = T)) %>%
+        select(sd) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        plot(col = "blue", main = "normalized standard deviation")
+        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
-# Plotting the normalized standard deviation for type II probes
-beta_type_II_norm %>%
-        apply(1, sd, na.rm = T) %>%
+# Plotting normalized beta standard deviation for type II
+intensities %>%
+        filter(Infinium == "II") %>%
+        group_by(ID) %>%
+        summarise(sd = sd(NormBeta, na.rm = T)) %>%
+        select(sd) %>%
+        unlist() %>%
+        as.numeric() %>%
         density() %T>%
-        lines(col = "red")
+        lines(col = "blue")
 
-# Plotting boxplot for normalized beta value
-boxplot(beta_norm)
+intensities %>%
+        ggplot(aes(x = Slide, y = NormBeta)) +
+        geom_boxplot()
+
 ```
-
-
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
@@ -275,7 +333,7 @@ Apply multiple test correction and set a significant threshold of 0.01.
 How many probes do you identify as differentially methylated considering nominal pValues?
 How many after Bonferroni correction?
 How many after BH correction?
-```{r step-10}
+```{r step-10-a}
 beta_norm_p_raw <- data.frame(beta_norm, pval_raw)
 beta_norm_p_raw <- beta_norm_p_raw[order(beta_norm_p_raw$pval_raw), ]
 summary(beta_norm_p_raw)
@@ -287,7 +345,7 @@ bonferroni_p_value <- p.adjust(raw_p_value, "bonferroni")
 summary(bonferroni_p_value)
 ```
 
-```{r step-10}
+```{r step-10-b}
 pval_complete <- data.frame(raw_p_value, BH_p_value, bonferroni_p_value)
 boxplot(pval_complete)
 ```
@@ -420,6 +478,11 @@ mhtplot(manhattan_data_input, control = mht.control(colors = palette), ylim = c(
 
 Step 13 (optional)
 As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
+```{r}
+# chr21 <- RGset[annotation$CHR == "chr21"]
+chr21 <- manhattan_data[manhattan_data$CHR == "chr21"]
+
+```
 Do you see a very clear difference between the samples?
 How many differentially methylated probes do you find on chromosome 21?
 
