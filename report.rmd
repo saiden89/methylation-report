@@ -20,6 +20,9 @@ library(minfi)
 library(magrittr)
 library(RColorBrewer)
 library(gplots)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
 baseDir <- ('./Input_data')
 targets <- read.metharray.sheet(baseDir)
 RGset <- read.metharray.exp(targets = targets)
@@ -166,7 +169,6 @@ intensities %>%
         as.numeric() %>%
         density() %T>%
         lines(col = "green")
-
 ```
 
 # Step 7
@@ -187,6 +189,10 @@ intensities["NormBeta"] <-
                 select(value)
 
 par(mfrow=c(2,3))
+```
+
+
+```{r}
 # Plotting raw beta for type I
 intensities %>%
         filter(Infinium == "I") %>%
@@ -231,9 +237,7 @@ intensities %>%
         density() %T>%
         lines(col = "blue")
 # Plotting Boxplot for Raw Data
-intensities %>%
-        ggplot(aes(x = Slide, y = RawBeta)) +
-        geom_boxplot()
+boxplot(RawBeta~Slide, intensities)
 
 # Plotting normalized beta for type I
 intensities %>%
@@ -278,22 +282,22 @@ intensities %>%
         as.numeric() %>%
         density() %T>%
         lines(col = "blue")
-
-intensities %>%
-        ggplot(aes(x = Slide, y = NormBeta)) +
-        geom_boxplot()
-
+# Boxplot for normalized bera values
+boxplot(NormBeta~Slide, intensities)
 ```
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
-```{r}
-pca_results <-
-  beta_norm %>%
-    t() %>%
-    prcomp(scale = T) %T>%
-    summary() %T>%
-    plot()
+```{r pca-data}
+pca_results <- intensities %>%
+        select(c(ID, Slide, NormBeta)) %>%
+        dcast(ID~Slide, value.var = "NormBeta") %>%
+        remove_rownames() %>%
+        column_to_rownames(var = 'ID') %>%
+         t() %>%
+        prcomp(scale = T) %T>%
+        summary() %T>%
+        plot()
 ```
 We can see how the 8th component doesn't carry any variance.
 
@@ -323,9 +327,14 @@ mann_whitney <- function(x) {
   wilcox <- wilcox.test(x ~ groups)
   return(wilcox$p.value)
 }
-pval_raw <- apply(beta_norm, 1,mann_whitney)
-summary(pval_raw)
-length(pval_raw)
+
+intensities["PvalRaw"] <- intensities %>%
+  select(c(ID, Slide, NormBeta)) %>%
+  dcast(ID ~ Slide, value.var = "NormBeta") %>%
+  column_to_rownames(var = 'ID') %>%
+  apply(1, mann_whitney) %T>%
+  summary() %T>%
+  length()
 ```
 
 Step 10
@@ -334,6 +343,10 @@ How many probes do you identify as differentially methylated considering nominal
 How many after Bonferroni correction?
 How many after BH correction?
 ```{r step-10-a}
+
+intensities["PvalBH"] <- p.adjust(intensities$PvalRaw, "BH")
+intensities["PvalBonf"] <- p.adjust(intensities$PvalRaw, "bonferroni")
+
 beta_norm_p_raw <- data.frame(beta_norm, pval_raw)
 beta_norm_p_raw <- beta_norm_p_raw[order(beta_norm_p_raw$pval_raw), ]
 summary(beta_norm_p_raw)
@@ -346,13 +359,21 @@ summary(bonferroni_p_value)
 ```
 
 ```{r step-10-b}
-pval_complete <- data.frame(raw_p_value, BH_p_value, bonferroni_p_value)
-boxplot(pval_complete)
+
+intensities%>%
+  select(c(PvalRaw, PvalBH, PvalBonf)) %T>%
+  boxplot()
 ```
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
 ```{r step-11}
-plot_data = as.matrix(beta_norm_p_raw[1:100, 1:8])
+plot_data <- intensities %>%
+  slice_min(PvalRaw, n = 100, with_ties = F) %>%
+  select(c(ID, Slide, PvalRaw)) %>%
+  dcast(ID~Slide, value.var = "PvalRaw") %>%
+  column_to_rownames(var = 'ID')
+
+#plot_data = as.matrix(beta_norm_p_raw[1:100, 1:8])
 colorbar <- c("orange", "orange", "#008080", "#008080", "#008080", "orange", "orange", "#008080")
 palette <- brewer.pal(100, name = "Greys")
 par(mfrow = c(1, 3))
