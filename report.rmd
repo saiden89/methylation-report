@@ -14,24 +14,24 @@ p-value threshold: 0.01
 normalization preprocessSWAN
 Mann_whitney test
 
-Starting from scratch, we have to load the necessary packages. This is done by loading the `easypackages` library that simplyfies library loading procedures.
+Starting from scratch, we have to load the necessary packages. This is done by loading the `easypackages` library that simplifies library loading procedures.
 Load raw data with minfi and create an object called RGset storing the RGChannelSet object
-```{r step-1, message = FALSE, warning = FALSE}
+```{r library-loading, message = FALSE, warning = FALSE}
 setwd('.')
 library(easypackages)
-libraries("minfi", "RColorBrewer", "ggplot2", "gap", "gplots", "tidyr", "reshape2", "magrittr", "dplyr", "tibble", "future.apply")
+libraries("minfi", "RColorBrewer", "ggplot2", "gap", "gplots", "tidyr", "reshape2", "magrittr", "dplyr", "tibble", "future.apply", "data.table")
 ```
 
+We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
 ```{r loading-rgset, message = FALSE, warning = FALSE}
 baseDir <- ('./Input_data')
 targets <- read.metharray.sheet(baseDir)
 RGset <- read.metharray.exp(targets = targets)
 save(RGset, file = "RGset.RData")
-RGset
 ```
 
 # Step 2
-Create the dataframes Red and Green to store the red and green fluorescences respectively
+We create the dataframes Red and Green to store the red and green fluorescences respectively, using the functions `getGreen` and `getRed`.
 ```{r loading-green-red, message = FALSE, warning = FALSE}
 Red <- data.frame(getRed(RGset))
 Green <- data.frame(getGreen(RGset))
@@ -116,17 +116,20 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
 ```{r step-6-a, message=FALSE, warning=FALSE}
-intensities <- getBeta(MSet.raw) %>%
-        melt(value.name = "RawBeta", varnames = c("ID", "Slide"))
-M_values <- getM(MSet.raw) %>%
-        melt()
+
+intensities <- data.frame(getBeta(MSet.raw)) %>%
+        rownames_to_column(var = "ID") %>%
+        data.table() %>%
+        pivot_longer(-ID, names_to = "Slide", values_to = "RawBeta")
+M_values <- data.frame(getM(MSet.raw)) %>%
+       pivot_longer(everything())
 intensities["RawM"] <- M_values$value
-summary(intensities)
+head(intensities)
 ```
-We now add a columnt for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
+We now add a column for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
 ```{r step-6-b, message=FALSE, warning=FALSE}
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
-intensities["status"] <- ifelse(intensities$Slide %in% slide_DS, "DS", "WT")
+intensities["Group"] <- ifelse(intensities$Slide %in% slide_DS, "DS", "WT")
 ```
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
@@ -134,7 +137,7 @@ Computing the mean for $\beta$ and $M$ subsets and both groups
 par(mfrow = c(1, 2))
 
 intensities %>%
-        filter(status == "WT") %>%
+        filter(Group == "WT") %>%
         group_by(ID) %>%
         summarise(mean = mean(RawBeta, na.rm = T)) %>%
         select(mean) %>%
@@ -143,7 +146,7 @@ intensities %>%
         density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 intensities %>%
-        filter(status == "DS") %>%
+        filter(Group == "DS") %>%
         group_by(ID) %>%
         summarise(mean = mean(RawBeta, na.rm = T)) %>%
         select(mean) %>%
@@ -152,7 +155,7 @@ intensities %>%
         density() %>%
         lines(col = "green")
 intensities %>%
-        filter(status == "WT") %>%
+        filter(Group == "WT") %>%
         group_by(ID) %>%
         summarise(mean = mean(RawM, na.rm = T)) %>%
         select(mean) %>%
@@ -161,7 +164,7 @@ intensities %>%
         density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 intensities %>%
-        filter(status == "DS") %>%
+        filter(Group == "DS") %>%
         group_by(ID) %>%
         summarise(mean = mean(RawM, na.rm = T)) %>%
         select(mean) %>%
@@ -184,8 +187,9 @@ intensities["Infinium"] <- ifelse(intensities$ID %in% type_I$Name, "I", "II")
 intensities["NormBeta"] <-
         RGset %>%
                 preprocessSWAN() %>%
+                data.frame()
                 getBeta() %>%
-                melt() %>%
+                pivot_longer(everything()) %>%
                 select(value)
 ```
 
@@ -413,14 +417,13 @@ Step 12
 Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
 ```{r, message=FALSE, warning=FALSE}
 volplot_data <-
-intensities %>%
-       # filter(status == "DS") %>%
-        select(c(ID, NormBeta, Slide, status)) %>%
-        group_by(ID, status) %>%
-        summarise(mean = mean(NormBeta, na.rm = T)) %>%
-        group_by(ID) %>%
-        summarise(Delta = diff(mean)) %>%
-        select(Delta)
+        intensities %>%
+                select(ID, NormBeta, Slide, Group) %>%
+                group_by(ID, Group) %>%
+                summarise(mean = mean(NormBeta, na.rm = T)) %>%
+                group_by(ID) %>%
+                summarise(Delta = diff(mean)) %>%
+                select(Delta)
 
 volplot_data["PvalRaw"] <- intensities %>%
         select(c(ID, PvalRaw)) %>%
