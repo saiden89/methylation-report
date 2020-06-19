@@ -5,7 +5,8 @@ date: "`r format(Sys.time(), '%d/%m/%y')`"
 output: pdf_document
 ---
 # Introduction
-In this work we apply some basic concepts for methylation analysis using the R programming language.
+In this work we apply some basic concepts seen in the theory lessons and apply them on a dataset of Illymina methylation data.
+The dataset is composed of 8 slides, which are samples taken from four patients affected with down sydrome (`DS`) and four healthy wyld-type subjects (`WT`).
 
 Student N° 26
 Address 10633381
@@ -13,16 +14,15 @@ p-value threshold: 0.01
 normalization preprocessSWAN
 Mann_whitney test
 
+Starting from scratch, we have to load the necessary packages. This is done by loading the `easypackages` library that simplyfies library loading procedures.
 Load raw data with minfi and create an object called RGset storing the RGChannelSet object
 ```{r step-1, message = FALSE, warning = FALSE}
 setwd('.')
-library(minfi)
-library(magrittr)
-library(RColorBrewer)
-library(gplots)
-library(dplyr)
-library(reshape2)
-library(ggplot2)
+library(easypackages)
+libraries("minfi", "RColorBrewer", "ggplot2", "gap", "gplots", "tidyr", "reshape2", "magrittr", "dplyr", "tibble", "future.apply")
+```
+
+```{r loading-rgset, message = FALSE, warning = FALSE}
 baseDir <- ('./Input_data')
 targets <- read.metharray.sheet(baseDir)
 RGset <- read.metharray.exp(targets = targets)
@@ -32,7 +32,7 @@ RGset
 
 # Step 2
 Create the dataframes Red and Green to store the red and green fluorescences respectively
-```{r step-2, message = FALSE, warning = FALSE}
+```{r loading-green-red, message = FALSE, warning = FALSE}
 Red <- data.frame(getRed(RGset))
 Green <- data.frame(getGreen(RGset))
 ```
@@ -76,20 +76,20 @@ MSet.raw <- preprocessRaw(RGset)
 Perform the following quality checks and provide a brief comment to each step:
 - QCplot
 
-```{r step-5-a}
+```{r qc}
 qc <- getQC(MSet.raw)
 plotQC(qc)
 ```
 
 - check the intensity of negative controls using minfi
 
-```{r step-5-b}
+```{r strip-plot}
 controlStripPlot(RGset, controls = "NEGATIVE")
 ```
 - calculate detection pValues; for each sample, how many probes have a detection p-value higher than the threshold assigned to each student?
 The function to use is detectionP, which takes as input the RGset.
 
-```{r step-5-c, message=FALSE, warning=FALSE}
+```{r failed-probes, message=FALSE, warning=FALSE}
 detection_p_value <- detectionP(RGset)
 dim(detection_p_value)
 failed_probes <- detection_p_value > 0.01
@@ -115,7 +115,7 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 (suggestion: subset the beta and M values matrixes in order to retain DS or WT subjects and apply the function mean to the 2 subsets).
 
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
-```{r step-6-a, message = FALSE}
+```{r step-6-a, message=FALSE, warning=FALSE}
 intensities <- getBeta(MSet.raw) %>%
         melt(value.name = "RawBeta", varnames = c("ID", "Slide"))
 M_values <- getM(MSet.raw) %>%
@@ -124,13 +124,13 @@ intensities["RawM"] <- M_values$value
 summary(intensities)
 ```
 We now add a columnt for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
-```{r step-6-b}
+```{r step-6-b, message=FALSE, warning=FALSE}
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
 intensities["status"] <- ifelse(intensities$Slide %in% slide_DS, "DS", "WT")
 ```
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
-```{r step-6-c}
+```{r step-6-c, message=FALSE, warning=FALSE}
 par(mfrow = c(1, 2))
 
 intensities %>%
@@ -140,7 +140,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 intensities %>%
         filter(status == "DS") %>%
@@ -149,7 +149,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         lines(col = "green")
 intensities %>%
         filter(status == "WT") %>%
@@ -158,7 +158,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 intensities %>%
         filter(status == "DS") %>%
@@ -167,7 +167,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         lines(col = "green")
 ```
 
@@ -177,7 +177,7 @@ Produce a plot with 6 panels in which, for both raw and normalized data, you sho
 Provide a short comment regarding the changes you observe.
 
 Producing the plots
-```{r step-7-a, message = FALSE}
+```{r normalization, message=FALSE, warning=FALSE}
 intensities["Infinium"] <- ifelse(intensities$ID %in% type_I$Name, "I", "II")
 
 # Normalization with preprocessSWAN
@@ -187,12 +187,12 @@ intensities["NormBeta"] <-
                 getBeta() %>%
                 melt() %>%
                 select(value)
-
-par(mfrow=c(2,3))
 ```
 
 
-```{r}
+```{r raw-vs-norm, message=FALSE, warning=FALSE}
+par(mfrow = c(2, 3))
+
 # Plotting raw beta for type I
 intensities %>%
         filter(Infinium == "I") %>%
@@ -201,7 +201,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
 # Plotting raw beta for type II
@@ -212,7 +212,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         lines(col = "blue")
 
 # Plotting raw beta standard deviatio for type I
@@ -223,7 +223,7 @@ intensities %>%
         select(sd) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
 # Plotting raw beta standard deviatio for type II
@@ -234,7 +234,7 @@ intensities %>%
         select(sd) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         lines(col = "blue")
 # Plotting Boxplot for Raw Data
 boxplot(RawBeta~Slide, intensities)
@@ -247,7 +247,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
 # Plotting normalized beta for type II
@@ -258,7 +258,7 @@ intensities %>%
         select(mean) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         lines(col = "blue")
 
 # Plotting normalized beta standard deviation for type I
@@ -269,7 +269,7 @@ intensities %>%
         select(sd) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
 
 # Plotting normalized beta standard deviation for type II
@@ -280,7 +280,7 @@ intensities %>%
         select(sd) %>%
         unlist() %>%
         as.numeric() %>%
-        density() %T>%
+        density() %>%
         lines(col = "blue")
 # Boxplot for normalized bera values
 boxplot(NormBeta~Slide, intensities)
@@ -288,20 +288,19 @@ boxplot(NormBeta~Slide, intensities)
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
-```{r pca-data}
+```{r pca-data, message=FALSE, warning=FALSE}
 pca_results <- intensities %>%
         select(c(ID, Slide, NormBeta)) %>%
         dcast(ID~Slide, value.var = "NormBeta") %>%
-        remove_rownames() %>%
         column_to_rownames(var = 'ID') %>%
-         t() %>%
+        t() %>%
         prcomp(scale = T) %T>%
         summary() %T>%
         plot()
 ```
 We can see how the 8th component doesn't carry any variance.
 
-```{r step-8-b}
+```{r pca-plot, message=FALSE, warning=FALSE}
 palette("default")
 groups <- factor(targets$Group)
 plot(pca_results$x[, 1], pca_results$x[, 2],
@@ -322,58 +321,46 @@ Using the matrix of normalized beta values generated in step 7, identify differe
 Note; it can take several minutes; if you encounter any problem you can run the differential methylated analysis only on a subset of probes (for example those on chromosome 1, 18 and 21)
 
 
-```{r}
+```{r mann-whitney, message=FALSE, warning=FALSE}
 mann_whitney <- function(x) {
   wilcox <- wilcox.test(x ~ groups)
   return(wilcox$p.value)
 }
-
+plan(multisession)
 intensities["PvalRaw"] <- intensities %>%
   select(c(ID, Slide, NormBeta)) %>%
   dcast(ID ~ Slide, value.var = "NormBeta") %>%
   column_to_rownames(var = 'ID') %>%
-  apply(1, mann_whitney) %T>%
+  future_apply(1, mann_whitney) %T>%
   summary() %T>%
   length()
 ```
-
 Step 10
 Apply multiple test correction and set a significant threshold of 0.01.
 How many probes do you identify as differentially methylated considering nominal pValues?
 How many after Bonferroni correction?
 How many after BH correction?
-```{r step-10-a}
-
+```{r bh-bonf, message=FALSE, warning=FALSE}
 intensities["PvalBH"] <- p.adjust(intensities$PvalRaw, "BH")
 intensities["PvalBonf"] <- p.adjust(intensities$PvalRaw, "bonferroni")
-
-beta_norm_p_raw <- data.frame(beta_norm, pval_raw)
-beta_norm_p_raw <- beta_norm_p_raw[order(beta_norm_p_raw$pval_raw), ]
-summary(beta_norm_p_raw)
-raw_p_value <- beta_norm_p_raw[, 9]
-summary(raw_p_value)
-BH_p_value <- p.adjust(raw_p_value, "BH")
-summary(BH_p_value)
-bonferroni_p_value <- p.adjust(raw_p_value, "bonferroni")
-summary(bonferroni_p_value)
 ```
 
-```{r step-10-b}
-
+```{r pvalue-plot, message=FALSE, warning=FALSE}
 intensities%>%
-  select(c(PvalRaw, PvalBH, PvalBonf)) %T>%
+  select(PvalRaw, PvalBH, PvalBonf) %>%
   boxplot()
 ```
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
-```{r step-11}
+```{r step-11, message=FALSE, warning=FALSE}
 plot_data <- intensities %>%
-  slice_min(PvalRaw, n = 100, with_ties = F) %>%
-  select(c(ID, Slide, PvalRaw)) %>%
-  dcast(ID~Slide, value.var = "PvalRaw") %>%
-  column_to_rownames(var = 'ID')
+        select(c(ID, Slide, NormBeta, PvalRaw)) %>%
+        dcast(ID + PvalRaw ~ Slide, value.var = "NormBeta") %>%
+        column_to_rownames(var = 'ID') %>%
+        slice_min(PvalRaw, with_ties = F, n = 100) %>%
+        select(-PvalRaw) %>%
+        as.matrix()
 
-#plot_data = as.matrix(beta_norm_p_raw[1:100, 1:8])
 colorbar <- c("orange", "orange", "#008080", "#008080", "#008080", "orange", "orange", "#008080")
 palette <- brewer.pal(100, name = "Greys")
 par(mfrow = c(1, 3))
@@ -424,47 +411,40 @@ heatmap.2(plot_data,
 
 Step 12
 Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
-```{r volcano-dataprep}
-NormBeta <- beta_norm_p_raw[, 1:8]
-dim(NormBeta)
-NormBeta_DS <- NormBeta[, targets$Group == "DS"]
-dim(NormBeta_DS)
-meanNormBeta_DS <- apply(NormBeta_DS, 1, mean)
-NormBeta_WT <- NormBeta[, targets$Group == "WT"]
-dim(NormBeta_WT)
-meanNormBeta_WT <- apply(NormBeta_WT, 1, mean)
-delta <- meanNormBeta_DS-meanNormBeta_WT
+```{r, message=FALSE, warning=FALSE}
+volplot_data <-
+intensities %>%
+       # filter(status == "DS") %>%
+        select(c(ID, NormBeta, Slide, status)) %>%
+        group_by(ID, status) %>%
+        summarise(mean = mean(NormBeta, na.rm = T)) %>%
+        group_by(ID) %>%
+        summarise(Delta = diff(mean)) %>%
+        select(Delta)
 
-volplot_data <- data.frame(delta, -log10(beta_norm_p_raw$pval_raw))
-Highlight <- volplot_data[abs(volplot_data[,1])>0.1 & volplot_data[,2]>(-log10(0.01)),]
-
-plot(volplot_data[, 1], volplot_data[, 2], pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
-abline(a = -log10(0.05), b = 0, col = "red")
-points(Highlight[, 1], Highlight[, 2], pch = 16, cex = 0.7, col = "red")
+volplot_data["PvalRaw"] <- intensities %>%
+        select(c(ID, PvalRaw)) %>%
+        distinct() %>%
+        select(PvalRaw)
 ```
-```{r volcano-plot}
-Highlight <- volplot_data[abs(volplot_data[, 1]) > 0.1 & volplot_data[, 2] > (-log10(0.01)),]
 
-plot(volplot_data[, 1], volplot_data[, 2], pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
+```{r volcano-plot, message=FALSE, warning=FALSE}
+Highlight <- volplot_data[abs(volplot_data$Delta) > 0.1 & volplot_data$PvalRaw > (-log10(0.01)),]
+plot(volplot_data$Delta, -log10(volplot_data$PvalRaw), pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
 abline(a = -log10(0.01), b = 0, col = "red")
 points(Highlight[, 1], Highlight[, 2], pch = 16, cex = 0.7, col = "red")
 ```
-```{r manhattan-dataprep}
-suppressMessages(library(gap))
-manhattan_data <-data.frame(rownames(beta_norm_p_raw), pval_complete)
-colnames(manhattan_data)[1] <- "Name"
 
-# we need to annotate the data
+```{r, message=FALSE, warning=FALSE}
 annotation <- getAnnotation(RGset)
-manhattan_data <- merge(manhattan_data, annotation, by="Name")
-manhattan_data <- droplevels(manhattan_data)
+manhattan_data <- intensities %>%
+        select(Name = ID, PvalRaw) %>%
+        distinct() %>%
+        merge(annotation, by = "Name") %>%
+        droplevels()
+```
 
-#manhattan_data <- data.frame(rownames(beta_norm_p_raw), pval_complete) %>%
- #       set_colnames(c("Name", colnames(pval_complete))) %>%
-  #      merge(annotation, by = "Name") %>%
-   #     droplevels()
-
-
+```{r manhattan-dataprep message, message=FALSE, warning=FALSE}
 chr_vect <- factor(manhattan_data$chr, levels = c("chr1",
                                                   "chr2",
                                                   "chr3",
@@ -489,19 +469,18 @@ chr_vect <- factor(manhattan_data$chr, levels = c("chr1",
                                                   "chr22",
                                                   "chrX",
                                                   "chrY"))
-manhattan_data_input <- data.frame(chr_vect, manhattan_data$pos, manhattan_data$raw_p_value)
+manhattan_data_input <- data.frame(chr_vect, manhattan_data$pos, manhattan_data$PvalRaw)
 ```
-```{r}
+```{r manhattan-plot, message=FALSE, warning=FALSE}
 palette <- rainbow(24)
-
 mhtplot(manhattan_data_input, control = mht.control(colors = palette), ylim = c(0,3))
 ```
 
 Step 13 (optional)
 As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # chr21 <- RGset[annotation$CHR == "chr21"]
-chr21 <- manhattan_data[manhattan_data$CHR == "chr21"]
+# chr21 <- manhattan_data[manhattan_data$CHR == "chr21"]
 
 ```
 Do you see a very clear difference between the samples?
