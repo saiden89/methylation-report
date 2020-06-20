@@ -19,7 +19,7 @@ Load raw data with minfi and create an object called RGset storing the RGChannel
 ```{r library-loading, message = FALSE, warning = FALSE}
 setwd('.')
 library(easypackages)
-libraries("minfi", "RColorBrewer", "ggplot2", "gap", "gplots", "tidyr", "reshape2", "magrittr", "dplyr", "tibble", "future.apply", "data.table")
+libraries("minfi", "RColorBrewer", "ggplot2", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table")
 ```
 
 We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
@@ -116,62 +116,48 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
 ```{r step-6-a, message=FALSE, warning=FALSE}
-
-intensities <- data.frame(getBeta(MSet.raw)) %>%
+beta <- MSet.raw %>%
+        getBeta %>%
+        data.frame() %>%
         rownames_to_column(var = "ID") %>%
-        data.table() %>%
-        pivot_longer(-ID, names_to = "Slide", values_to = "RawBeta")
-M_values <- data.frame(getM(MSet.raw)) %>%
-       pivot_longer(everything())
-intensities["RawM"] <- M_values$value
+        pivot_longer(-ID, names_to = "Slide", values_to = "RawBeta") %>%
+        as.data.table()
+m <- MSet.raw %>%
+        getM %>%
+        data.frame() %>%
+        rownames_to_column(var = "ID") %>%
+        pivot_longer(-ID, names_to = "Slide", values_to = "RawM") %>%
+        as.data.table()
+
+intensities <- merge.data.table(beta, m)
+rm(m, beta)
 head(intensities)
 ```
 We now add a column for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
 ```{r step-6-b, message=FALSE, warning=FALSE}
+
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
-intensities["Group"] <- ifelse(intensities$Slide %in% slide_DS, "DS", "WT")
+intensities <-
+        ifelse(intensities$Slide %in% paste("X", slide_DS, sep = ""), "DS", "WT") %>%
+        add_column(intensities, Group = .)
+
+
+head(intensities)
 ```
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
-```{r step-6-c, message=FALSE, warning=FALSE}
+```{r intensity-plot, message=FALSE, warning=FALSE}
 par(mfrow = c(1, 2))
-
 intensities %>%
-        filter(Group == "WT") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(RawBeta, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
+        group_by(ID, Group) %>%
+        mutate(mean = mean(RawBeta, na.rm = T)) %>%
+        ggplot(aes(x = mean)) +
+        geom_density(aes(color = Group))
 intensities %>%
-        filter(Group == "DS") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(RawBeta, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        lines(col = "green")
-intensities %>%
-        filter(Group == "WT") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(RawM, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
-intensities %>%
-        filter(Group == "DS") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(RawM, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        lines(col = "green")
+        group_by(ID, Group) %>%
+        mutate(mean = mean(RawM, na.rm = T)) %>%
+        ggplot(aes(x = mean)) +
+        geom_density(aes(color = Group))
 ```
 
 # Step 7
@@ -181,113 +167,60 @@ Provide a short comment regarding the changes you observe.
 
 Producing the plots
 ```{r normalization, message=FALSE, warning=FALSE}
-intensities["Infinium"] <- ifelse(intensities$ID %in% type_I$Name, "I", "II")
+intensities <-
+        ifelse(intensities$ID %in% type_I$Name, "I", "II") %>%
+        add_column(intensities, Infinium = .)
 
 # Normalization with preprocessSWAN
-intensities["NormBeta"] <-
+intensities <-
         RGset %>%
                 preprocessSWAN() %>%
-                data.frame()
                 getBeta() %>%
+                data.frame() %>%
                 pivot_longer(everything()) %>%
-                select(value)
+                select(NormBeta = value) %>%
+                add_column(intensities)
 ```
 
 
 ```{r raw-vs-norm, message=FALSE, warning=FALSE}
 par(mfrow = c(2, 3))
 
-# Plotting raw beta for type I
 intensities %>%
-        filter(Infinium == "I") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(RawBeta, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
-
-# Plotting raw beta for type II
-intensities %>%
-        filter(Infinium == "II") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(RawBeta, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        lines(col = "blue")
+        group_by(ID, Infinium) %>%
+        mutate(mean = mean(RawBeta, na.rm = T)) %>%
+        ggplot(aes(x = mean)) +
+        geom_density(aes(color = Infinium)) +
+        xlim(0, 1)
 
 # Plotting raw beta standard deviatio for type I
 intensities %>%
-        filter(Infinium == "I") %>%
-        group_by(ID) %>%
-        summarise(sd = sd(RawBeta, na.rm = T)) %>%
-        select(sd) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
+        group_by(ID, Infinium) %>%
+        mutate(sd = sd(RawBeta, na.rm = T)) %>%
+        ggplot(aes(x = sd)) +
+        geom_density(aes(color = Infinium))
 
-# Plotting raw beta standard deviatio for type II
-intensities %>%
-        filter(Infinium == "II") %>%
-        group_by(ID) %>%
-        summarise(sd = sd(RawBeta, na.rm = T)) %>%
-        select(sd) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        lines(col = "blue")
 # Plotting Boxplot for Raw Data
-boxplot(RawBeta~Slide, intensities)
-
-# Plotting normalized beta for type I
 intensities %>%
-        filter(Infinium == "I") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(NormBeta, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
-
-# Plotting normalized beta for type II
+  ggplot(aes(x = Slide, y = RawBeta)) +
+  geom_boxplot()
 intensities %>%
-        filter(Infinium == "II") %>%
-        group_by(ID) %>%
-        summarise(mean = mean(NormBeta, na.rm = T)) %>%
-        select(mean) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        lines(col = "blue")
+        group_by(ID, Infinium) %>%
+        mutate(mean = mean(NormBeta, na.rm = T)) %>%
+        ggplot(aes(x = mean)) +
+        geom_density(aes(color = Infinium)) +
+        xlim(0, 1)
 
-# Plotting normalized beta standard deviation for type I
 intensities %>%
-        filter(Infinium == "I") %>%
-        group_by(ID) %>%
-        summarise(sd = sd(NormBeta, na.rm = T)) %>%
-        select(sd) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        plot(main = expression(paste("Density of ", beta, " values"), col = "green"))
+        group_by(ID, Infinium) %>%
+        mutate(sd = sd(NormBeta, na.rm = T)) %>%
+        ggplot(aes(x = sd)) +
+        geom_density(aes(color = Infinium))
 
-# Plotting normalized beta standard deviation for type II
-intensities %>%
-        filter(Infinium == "II") %>%
-        group_by(ID) %>%
-        summarise(sd = sd(NormBeta, na.rm = T)) %>%
-        select(sd) %>%
-        unlist() %>%
-        as.numeric() %>%
-        density() %>%
-        lines(col = "blue")
 # Boxplot for normalized bera values
-boxplot(NormBeta~Slide, intensities)
+intensities %>%
+  ggplot(aes(x = Slide, y = NormBeta)) +
+  geom_boxplot()
 ```
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
@@ -299,8 +232,7 @@ pca_results <- intensities %>%
         column_to_rownames(var = 'ID') %>%
         t() %>%
         prcomp(scale = T) %T>%
-        summary() %T>%
-        plot()
+        screeplot()
 ```
 We can see how the 8th component doesn't carry any variance.
 
@@ -331,13 +263,24 @@ mann_whitney <- function(x) {
   return(wilcox$p.value)
 }
 plan(multisession)
-intensities["PvalRaw"] <- intensities %>%
-  select(c(ID, Slide, NormBeta)) %>%
-  dcast(ID ~ Slide, value.var = "NormBeta") %>%
-  column_to_rownames(var = 'ID') %>%
-  future_apply(1, mann_whitney) %T>%
-  summary() %T>%
-  length()
+
+#intensities["PvalRaw"] <-
+#  intensities %>%
+#    group_by(ID, Slide) %>%
+#    summarise(PvalRaW = future_apply(1, mann_whitney(NormBeta)))
+
+
+intensities <- intensities %>%
+        select(ID, Slide, NormBeta) %>%
+        pivot_wider(names_from = Slide, values_from = NormBeta) %>%
+        column_to_rownames(var = "ID") %>%
+        future_apply(1, mann_whitney) %>%
+        data.frame() %>%
+        rownames_to_column(var = "ID") %>%
+        data.table() %>%
+        rename(PvalRaw = ".") %>%
+        left_join(intensities, ., by = "ID")
+
 ```
 Step 10
 Apply multiple test correction and set a significant threshold of 0.01.
@@ -345,14 +288,17 @@ How many probes do you identify as differentially methylated considering nominal
 How many after Bonferroni correction?
 How many after BH correction?
 ```{r bh-bonf, message=FALSE, warning=FALSE}
-intensities["PvalBH"] <- p.adjust(intensities$PvalRaw, "BH")
-intensities["PvalBonf"] <- p.adjust(intensities$PvalRaw, "bonferroni")
+
+intensities <- add_column(intensities, PvalBH = p.adjust(intensities$PvalRaw, "BH"))
+intensities <- add_column(intensities, PvalBonf = p.adjust(intensities$PvalRaw, "bonferroni"))
 ```
 
 ```{r pvalue-plot, message=FALSE, warning=FALSE}
-intensities%>%
-  select(PvalRaw, PvalBH, PvalBonf) %>%
-  boxplot()
+intensities %>%
+        select(PvalRaw, PvalBH, PvalBonf) %>%
+      pivot_longer(everything(), names_to = "Method", values_to = "Pval") %>%
+  ggplot(aes(x = Method, y = Pval)) +
+  geom_boxplot()
 ```
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
@@ -424,18 +370,13 @@ volplot_data <-
                 group_by(ID) %>%
                 summarise(Delta = diff(mean)) %>%
                 select(Delta)
-
-volplot_data["PvalRaw"] <- intensities %>%
-        select(c(ID, PvalRaw)) %>%
-        distinct() %>%
-        select(PvalRaw)
 ```
 
 ```{r volcano-plot, message=FALSE, warning=FALSE}
-Highlight <- volplot_data[abs(volplot_data$Delta) > 0.1 & volplot_data$PvalRaw > (-log10(0.01)),]
-plot(volplot_data$Delta, -log10(volplot_data$PvalRaw), pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
-abline(a = -log10(0.01), b = 0, col = "red")
-points(Highlight[, 1], Highlight[, 2], pch = 16, cex = 0.7, col = "red")
+#Highlight <- volplot_data[abs(volplot_data$Delta) > 0.1 & volplot_data$PvalRaw > (-log10(0.01)),]
+#plot(volplot_data$Delta, -log10(volplot_data$PvalRaw), pch = 16, cex = 0.5, ylab = "p-Values", xlab = "delta", ylim = c(0, 2)) - log10(0.05)
+#abline(a = -log10(0.01), b = 0, col = "red")
+# points(Highlight[, 1], Highlight[, 2], pch = 16, cex = 0.7, col = "red")
 ```
 
 ```{r, message=FALSE, warning=FALSE}
