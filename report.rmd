@@ -19,11 +19,12 @@ Load raw data with minfi and create an object called RGset storing the RGChannel
 ```{r library-loading, message = FALSE, warning = FALSE}
 setwd('.')
 library(easypackages)
-libraries("minfi", "RColorBrewer", "ggplot2", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table")
+libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table",  "quantsmooth", "qqman")
 ```
 
 We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
 ```{r loading-rgset, message = FALSE, warning = FALSE}
+# TODO: fix the variables
 baseDir <- ('./Input_data')
 targets <- read.metharray.sheet(baseDir)
 RGset <- read.metharray.exp(targets = targets)
@@ -43,7 +44,6 @@ Optional: check in the manifest file if the address corresponds to a Type I or a
 
 For the optional procedure we will create two dataframes `type_I` and `type_II`, which will be reused later on for the normalization.
 ```{r step-3, message = FALSE, warning = FALSE}
-
 type_I <- getProbeInfo(RGset, type = 'I')
 type_II <- getProbeInfo(RGset, type = 'II')
 type_I[type_I$AddressA == 10633381,]
@@ -365,13 +365,13 @@ delta <-
                 select(Delta)
 
 logbeta <- intensities %>%
-        select(ID, PvalRow) %>%
+        select(ID, PvalRaw) %>%
         distinct() %>%
-        select(PvalRow) %>%
+        select(PvalRaw) %>%
         log10() %>%
-        transmute(Pvalrow = -PvalRow)
+        transmute(PvalRaw = -PvalRaw)
 volplot_data <- cbind(delta, logbeta)
-ggplot(data = volplot_data, aes(Delta, Pvalrow)) +
+ggplot(data = volplot_data, aes(Delta, PvalRaw)) +
 geom_point()
 ```
 
