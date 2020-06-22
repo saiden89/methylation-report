@@ -25,8 +25,7 @@ libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "fu
 We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
 ```{r loading-rgset, message = FALSE, warning = FALSE}
 # TODO: fix the variables
-baseDir <- ('./Input_data')
-targets <- read.metharray.sheet(baseDir)
+targets <- read.metharray.sheet("./Input_data")
 RGset <- read.metharray.exp(targets = targets)
 save(RGset, file = "RGset.RData")
 ```
@@ -44,14 +43,20 @@ Optional: check in the manifest file if the address corresponds to a Type I or a
 
 For the optional procedure we will create two dataframes `type_I` and `type_II`, which will be reused later on for the normalization.
 ```{r step-3, message = FALSE, warning = FALSE}
-type_I <- getProbeInfo(RGset, type = 'I')
-type_II <- getProbeInfo(RGset, type = 'II')
-type_I[type_I$AddressA == 10633381,]
-type_I[type_I$AddressB == 10633381,]
-type_II[type_II$AddressA == 10633381,]
+
+annotation <- RGset %>%
+        getAnnotation() %>%
+        data.frame() %>%
+        data.table() %>%
+        select(Name, chr, pos, Type, AddressA, AddressB)
+
+annotation[AddressA== 10633381 | AddressB == 10633381]
 Red[rownames(Red) == '10633381',]
 Green[rownames(Green) == '10633381',]
+annotation[, c("AddressA", "AddressB") := NULL]
 ```
+
+
 We can see it's a type I infinium with the Red channel.
 
 | Sample               | Row | Column | Red Intensity | Green Intensity | Type | Color |
@@ -117,43 +122,40 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
 ```{r step-6-a, message=FALSE, warning=FALSE}
 beta <- MSet.raw %>%
-        getBeta %>%
+        getBeta() %>%
         data.frame() %>%
-        rownames_to_column(var = "ID") %>%
-        pivot_longer(-ID, names_to = "Slide", values_to = "RawBeta") %>%
-        as.data.table()
+        rownames_to_column(var = "Name") %>%
+        pivot_longer(-Name, names_to = "Slide", values_to = "RawBeta") %>%
+        setDT()
 m <- MSet.raw %>%
-        getM %>%
+        getM() %>%
         data.frame() %>%
-        rownames_to_column(var = "ID") %>%
-        pivot_longer(-ID, names_to = "Slide", values_to = "RawM") %>%
-        as.data.table()
+        rownames_to_column(var = "Name") %>%
+        pivot_longer(-Name, names_to = "Slide", values_to = "RawM") %>%
+        setDT()
 
-intensities <- merge.data.table(beta, m)
-rm(m, beta)
-head(intensities)
+methylData <- merge.data.table(beta, m)
+methylData <- merge.data.table(annotation, methylData, by = "Name")
+# rm(m, beta, annotation, intensities)
+head(methylData)
 ```
 We now add a column for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
 ```{r step-6-b, message=FALSE, warning=FALSE}
-
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
-intensities <-
-        ifelse(intensities$Slide %in% paste("X", slide_DS, sep = ""), "DS", "WT") %>%
-        add_column(intensities, Group = .)
-
-
-head(intensities)
+methylData %<>%
+        mutate(Group = if_else(Slide %in% slide_DS, "DS", "WT"))
+head(methylData)
 ```
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
 ```{r intensity-plot, message=FALSE, warning=FALSE}
 par(mfrow = c(1, 2))
-intensities %>%
+methylData %>%
         group_by(ID, Group) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group))
-intensities %>%
+methylData %>%
         group_by(ID, Group) %>%
         mutate(mean = mean(RawM, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
@@ -167,24 +169,24 @@ Provide a short comment regarding the changes you observe.
 
 Producing the plots
 ```{r normalization, message=FALSE, warning=FALSE}
-intensities %<>%
+methylData %<>%
         mutate(Infinium = if_else(ID %in% type_I$Name, "I", "II"))
 
 # Normalization with preprocessSWAN
-intensities <- RGset %>%
+methylData <- RGset %>%
         preprocessSWAN() %>%
         getBeta() %>%
         data.frame() %>%
         pivot_longer(everything()) %>%
         select(NormBeta = value) %>%
-        add_column(intensities)
+        add_column(methylData)
 ```
 
 
 ```{r raw-vs-norm, message=FALSE, warning=FALSE}
 par(mfrow = c(2, 3))
 
-intensities %>%
+methylData %>%
         group_by(ID, Infinium) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
@@ -192,31 +194,31 @@ intensities %>%
         xlim(0, 1)
 
 # Plotting raw beta standard deviatio for type I
-intensities %>%
+methylData %>%
         group_by(ID, Infinium) %>%
         mutate(sd = sd(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
         geom_density(aes(color = Infinium))
 
 # Plotting Boxplot for Raw Data
-intensities %>%
+methylData %>%
   ggplot(aes(x = Slide, y = RawBeta)) +
   geom_boxplot()
-intensities %>%
+methylData %>%
         group_by(ID, Infinium) %>%
         mutate(mean = mean(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Infinium)) +
         xlim(0, 1)
 
-intensities %>%
+methylData %>%
         group_by(ID, Infinium) %>%
         mutate(sd = sd(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
         geom_density(aes(color = Infinium))
 
 # Boxplot for normalized bera values
-intensities %>%
+methylData %>%
   ggplot(aes(x = Slide, y = NormBeta)) +
   geom_boxplot()
 ```
@@ -224,7 +226,7 @@ Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
 ```{r pca-data, message=FALSE, warning=FALSE}
-pca_results <- intensities %>%
+pca_results <- methylData %>%
         select(c(ID, Slide, NormBeta)) %>%
         dcast(ID~Slide, value.var = "NormBeta") %>%
         column_to_rownames(var = 'ID') %>%
@@ -262,7 +264,7 @@ mann_whitney <- function(x) {
 }
 plan(multisession)
 
-intensities %<>%
+methylData %<>%
         select(ID, Slide, NormBeta) %>%
         pivot_wider(names_from = Slide, values_from = NormBeta) %>%
         column_to_rownames(var = "ID") %>%
@@ -271,7 +273,7 @@ intensities %<>%
         rownames_to_column(var = "ID") %>%
         data.table() %>%
         setnames(".", "PvalRaw") %>%
-        left_join(intensities, ., by = "ID")
+        left_join(methylData, ., by = "ID")
 ```
 Step 10
 Apply multiple test correction and set a significant threshold of 0.01.
@@ -279,14 +281,14 @@ How many probes do you identify as differentially methylated considering nominal
 How many after Bonferroni correction?
 How many after BH correction?
 ```{r bh-bonf, message=FALSE, warning=FALSE}
-intensities %<>%
+methylData %<>%
         mutate(PvalBH = p.adjust(PvalRaw,"BH"))
-intensities %<>%
+methylData %<>%
         mutate(PvalBonf = p.adjust(PvalRaw,"bonferroni"))
 ```
 
 ```{r pvalue-plot, message=FALSE, warning=FALSE}
-intensities %>%
+methylData %>%
         select(PvalRaw, PvalBH, PvalBonf) %>%
         pivot_longer(everything(), names_to = "Method", values_to = "Pval") %>%
         ggplot(aes(x = Method, y = Pval)) +
@@ -296,7 +298,7 @@ intensities %>%
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
 ```{r step-11, message=FALSE, warning=FALSE}
-plot_data <- intensities %>%
+plot_data <- methylData %>%
         select(c(ID, Slide, NormBeta, PvalRaw)) %>%
         dcast(ID + PvalRaw ~ Slide, value.var = "NormBeta") %>%
         column_to_rownames(var = 'ID') %>%
@@ -356,7 +358,7 @@ Step 12
 Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
 ```{r, message=FALSE, warning=FALSE}
 delta <-
-        intensities %>%
+        methylData %>%
                 select(ID, NormBeta, Slide, Group) %>%
                 group_by(ID, Group) %>%
                 summarise(mean = mean(NormBeta, na.rm = T)) %>%
@@ -364,7 +366,7 @@ delta <-
                 summarise(Delta = diff(mean)) %>%
                 select(Delta)
 
-logbeta <- intensities %>%
+logbeta <- methylData %>%
         select(ID, PvalRaw) %>%
         distinct() %>%
         select(PvalRaw) %>%
@@ -377,7 +379,7 @@ geom_point()
 
 ```{r, message=FALSE, warning=FALSE}
 annotation <- getAnnotation(RGset)
-manhattan_data <- intensities %>%
+manhattan_data <- methylData %>%
         select(Name = ID, PvalRaw) %>%
         distinct() %>%
         merge(annotation, by = "Name") %>%
