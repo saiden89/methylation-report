@@ -19,7 +19,7 @@ Load raw data with minfi and create an object called RGset storing the RGChannel
 ```{r library-loading, message = FALSE, warning = FALSE}
 setwd('.')
 library(easypackages)
-libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table",  "quantsmooth", "qqman")
+libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table",  "quantsmooth", "qqman", "gridExtra")
 ```
 
 We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
@@ -143,7 +143,7 @@ We now add a column for the Sample status, which can be either Down Syndrome (`D
 ```{r step-6-b, message=FALSE, warning=FALSE}
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
 methylData %<>%
-        mutate(Group = if_else(Slide %in% slide_DS, "DS", "WT"))
+        mutate(Group = if_else(Slide %in% paste("X", slide_DS, sep = ""), "DS", "WT"))
 head(methylData)
 ```
 
@@ -151,15 +151,16 @@ Computing the mean for $\beta$ and $M$ subsets and both groups
 ```{r intensity-plot, message=FALSE, warning=FALSE}
 par(mfrow = c(1, 2))
 methylData %>%
-        group_by(ID, Group) %>%
+        group_by(Name, Group) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group))
 methylData %>%
-        group_by(ID, Group) %>%
+        group_by(Name, Group) %>%
         mutate(mean = mean(RawM, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group))
+arrangeGrob(ncol = 2, nrow = 1)
 ```
 
 # Step 7
@@ -169,8 +170,8 @@ Provide a short comment regarding the changes you observe.
 
 Producing the plots
 ```{r normalization, message=FALSE, warning=FALSE}
-methylData %<>%
-        mutate(Infinium = if_else(ID %in% type_I$Name, "I", "II"))
+#methylData %<>%
+ #       mutate(Infinium = if_else(Name %in% type_I$Name, "I", "II"))
 
 # Normalization with preprocessSWAN
 methylData <- RGset %>%
@@ -184,52 +185,55 @@ methylData <- RGset %>%
 
 
 ```{r raw-vs-norm, message=FALSE, warning=FALSE}
-par(mfrow = c(2, 3))
-
+#par(mfrow = c(2, 3))
+arrangeGrob(ncol = 3, nrow = 2)
 methylData %>%
-        group_by(ID, Infinium) %>%
+        group_by(Name, Type) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
-        geom_density(aes(color = Infinium)) +
+        geom_density(aes(color = Type)) +
         xlim(0, 1)
 
 # Plotting raw beta standard deviatio for type I
 methylData %>%
-        group_by(ID, Infinium) %>%
+        group_by(Name, Type) %>%
         mutate(sd = sd(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
-        geom_density(aes(color = Infinium))
+        geom_density(aes(color = Type))
 
 # Plotting Boxplot for Raw Data
 methylData %>%
   ggplot(aes(x = Slide, y = RawBeta)) +
   geom_boxplot()
 methylData %>%
-        group_by(ID, Infinium) %>%
+        group_by(Name, Type) %>%
         mutate(mean = mean(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
-        geom_density(aes(color = Infinium)) +
+        geom_density(aes(color = Type)) +
         xlim(0, 1)
 
 methylData %>%
-        group_by(ID, Infinium) %>%
+        group_by(Name, Type) %>%
         mutate(sd = sd(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
-        geom_density(aes(color = Infinium))
+        geom_density(aes(color = Type))
 
 # Boxplot for normalized bera values
 methylData %>%
   ggplot(aes(x = Slide, y = NormBeta)) +
   geom_boxplot()
+
+
+
 ```
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
 ```{r pca-data, message=FALSE, warning=FALSE}
 pca_results <- methylData %>%
-        select(c(ID, Slide, NormBeta)) %>%
-        dcast(ID~Slide, value.var = "NormBeta") %>%
-        column_to_rownames(var = 'ID') %>%
+        select(Name, Slide, NormBeta) %>%
+        pivot_wider( names_from = "Slide", values_from = "NormBeta") %>%
+        column_to_rownames(var = 'Name') %>%
         t() %>%
         prcomp(scale = T) %T>%
         screeplot()
@@ -265,15 +269,15 @@ mann_whitney <- function(x) {
 plan(multisession)
 
 methylData %<>%
-        select(ID, Slide, NormBeta) %>%
+        select(Name, Slide, NormBeta) %>%
         pivot_wider(names_from = Slide, values_from = NormBeta) %>%
-        column_to_rownames(var = "ID") %>%
+        column_to_rownames(var = "Name") %>%
         future_apply(1, mann_whitney) %>%
         data.frame() %>%
-        rownames_to_column(var = "ID") %>%
+        rownames_to_column(var = "Name") %>%
         data.table() %>%
         setnames(".", "PvalRaw") %>%
-        left_join(methylData, ., by = "ID")
+        left_join(methylData, ., by = "Name")
 ```
 Step 10
 Apply multiple test correction and set a significant threshold of 0.01.
@@ -298,10 +302,10 @@ methylData %>%
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
 ```{r step-11, message=FALSE, warning=FALSE}
-plot_data <- methylData %>%
-        select(c(ID, Slide, NormBeta, PvalRaw)) %>%
-        dcast(ID + PvalRaw ~ Slide, value.var = "NormBeta") %>%
-        column_to_rownames(var = 'ID') %>%
+plot_data<- methylData %>%
+        select(Name, Slide, NormBeta, PvalRaw) %>%
+        pivot_wider(names_from = Slide, values_from = NormBeta) %>%
+        column_to_rownames(var = 'Name') %>%
         slice_min(PvalRaw, with_ties = F, n = 100) %>%
         select(-PvalRaw) %>%
         as.matrix()
@@ -359,15 +363,15 @@ Produce a volcano plot and a Manhattan plot of the results of differential methy
 ```{r, message=FALSE, warning=FALSE}
 delta <-
         methylData %>%
-                select(ID, NormBeta, Slide, Group) %>%
-                group_by(ID, Group) %>%
+                select(Name, NormBeta, Slide, Group) %>%
+                group_by(Name, Group) %>%
                 summarise(mean = mean(NormBeta, na.rm = T)) %>%
-                group_by(ID) %>%
+                group_by(Name) %>%
                 summarise(Delta = diff(mean)) %>%
                 select(Delta)
 
 logbeta <- methylData %>%
-        select(ID, PvalRaw) %>%
+        select(Name, PvalRaw) %>%
         distinct() %>%
         select(PvalRaw) %>%
         log10() %>%
@@ -380,7 +384,7 @@ geom_point()
 ```{r, message=FALSE, warning=FALSE}
 annotation <- getAnnotation(RGset)
 manhattan_data <- methylData %>%
-        select(Name = ID, PvalRaw) %>%
+        select(Name = Name, PvalRaw) %>%
         distinct() %>%
         merge(annotation, by = "Name") %>%
         as.data.table() %>%
