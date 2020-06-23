@@ -150,18 +150,18 @@ head(methylData)
 Computing the mean for $\beta$ and $M$ subsets and both groups
 ```{r intensity-plot, message=FALSE, warning=FALSE}
 par(mfrow = c(1, 2))
-methylData %>%
+rawBetaplot <- methylData %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group)) +
         xlim(0, 1)
-methylData %>%
+rawMplot <-methylData %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawM, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group))
-arrangeGrob(ncol = 2, nrow = 1)
+grid.arrange(rawBetaplot, rawMplot, nrow = 1)
 ```
 
 # Step 7
@@ -185,7 +185,7 @@ methylData <- RGset %>%
 ```{r raw-vs-norm, message=FALSE, warning=FALSE}
 #par(mfrow = c(2, 3))
 arrangeGrob(ncol = 3, nrow = 2)
-methylData %>%
+rawBetaMean<- methylData %>%
         group_by(Name, Type) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
@@ -193,33 +193,36 @@ methylData %>%
         xlim(0, 1)
 
 # Plotting raw beta standard deviatio for type I
-methylData %>%
+rawBetaSD<-methylData %>%
         group_by(Name, Type) %>%
         mutate(sd = sd(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
         geom_density(aes(color = Type))
 
 # Plotting Boxplot for Raw Data
-methylData %>%
+rawBetaBox<- methylData %>%
   ggplot(aes(x = Slide, y = RawBeta)) +
   geom_boxplot()
-methylData %>%
+normBetaMean <- methylData %>%
         group_by(Name, Type) %>%
         mutate(mean = mean(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Type)) +
         xlim(0, 1)
 
-methylData %>%
+normBetaSD <- methylData %>%
         group_by(Name, Type) %>%
         mutate(sd = sd(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
         geom_density(aes(color = Type))
 
 # Boxplot for normalized bera values
-methylData %>%
+normBetaBox <- methylData %>%
   ggplot(aes(x = Slide, y = NormBeta)) +
   geom_boxplot()
+
+grid.arrange(rawBetaMean, rawBetaSD, rawBetaBox, normBetaMean, normBetaSD, normBetaBox, nrow = 2)
+
 ```
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
@@ -296,7 +299,7 @@ methylData %>%
 ```
 Step 11
 Produce an heatmap of the top 100 differentially mehtylated probes
-```{r step-11, message=FALSE, warning=FALSE}
+```{r heatmaps, message=FALSE, warning=FALSE}
 plot_data<- methylData %>%
         select(Name, Slide, NormBeta, PvalRaw) %>%
         pivot_wider(names_from = Slide, values_from = NormBeta) %>%
@@ -355,7 +358,7 @@ heatmap.2(plot_data,
 
 Step 12
 Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
-```{r, message=FALSE, warning=FALSE}
+```{r volcano, message=FALSE, warning=FALSE}
 delta <- methylData %>%
                 select(Name, NormBeta, Slide, Group) %>%
                 group_by(Name, Group) %>%
@@ -375,7 +378,7 @@ ggplot(data = volplot_data, aes(Delta, PvalRaw)) +
 geom_point()
 ```
 
-```{r, message=FALSE, warning=FALSE}
+```{r manhattan, message=FALSE, warning=FALSE}
 manhattan_data <- methylData %>%
         select(Name = Name, PvalRaw) %>%
         distinct() %>%
@@ -388,7 +391,7 @@ manhattan(manhattan_data, chr="chr", bp="pos", snp="Name", p="PvalRaw")
 
 Step 13 (optional)
 As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
-```{r, message=FALSE, warning=FALSE}
+```{r chr21, message=FALSE, warning=FALSE}
 methylData %>%
         filter(chr == "chr21") %>%
         group_by(Name, Group) %>%
@@ -396,8 +399,6 @@ methylData %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group)) +
         xlim(0, 1)
-# chr21 <- manhattan_data[manhattan_data$CHR == "chr21"]
-
 ```
 Do you see a very clear difference between the samples?
 How many differentially methylated probes do you find on chromosome 21?
