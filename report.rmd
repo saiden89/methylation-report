@@ -154,7 +154,8 @@ methylData %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
-        geom_density(aes(color = Group))
+        geom_density(aes(color = Group)) +
+        xlim(0, 1)
 methylData %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawM, na.rm = T)) %>%
@@ -170,9 +171,6 @@ Provide a short comment regarding the changes you observe.
 
 Producing the plots
 ```{r normalization, message=FALSE, warning=FALSE}
-#methylData %<>%
- #       mutate(Infinium = if_else(Name %in% type_I$Name, "I", "II"))
-
 # Normalization with preprocessSWAN
 methylData <- RGset %>%
         preprocessSWAN() %>%
@@ -222,9 +220,6 @@ methylData %>%
 methylData %>%
   ggplot(aes(x = Slide, y = NormBeta)) +
   geom_boxplot()
-
-
-
 ```
 Step 8
 Perform a PCA on the beta matrix generated in step 7. Comment the plot.
@@ -361,8 +356,7 @@ heatmap.2(plot_data,
 Step 12
 Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
 ```{r, message=FALSE, warning=FALSE}
-delta <-
-        methylData %>%
+delta <- methylData %>%
                 select(Name, NormBeta, Slide, Group) %>%
                 group_by(Name, Group) %>%
                 summarise(mean = mean(NormBeta, na.rm = T)) %>%
@@ -382,7 +376,6 @@ geom_point()
 ```
 
 ```{r, message=FALSE, warning=FALSE}
-annotation <- getAnnotation(RGset)
 manhattan_data <- methylData %>%
         select(Name = Name, PvalRaw) %>%
         distinct() %>%
@@ -396,7 +389,13 @@ manhattan(manhattan_data, chr="chr", bp="pos", snp="Name", p="PvalRaw")
 Step 13 (optional)
 As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
 ```{r, message=FALSE, warning=FALSE}
-# chr21 <- RGset[annotation$CHR == "chr21"]
+methylData %>%
+        filter(chr == "chr21") %>%
+        group_by(Name, Group) %>%
+        mutate(mean = mean(NormBeta, na.rm = T)) %>%
+        ggplot(aes(x = mean)) +
+        geom_density(aes(color = Group)) +
+        xlim(0, 1)
 # chr21 <- manhattan_data[manhattan_data$CHR == "chr21"]
 
 ```
