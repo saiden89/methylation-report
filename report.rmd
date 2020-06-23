@@ -25,6 +25,7 @@ libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "fu
 We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
 ```{r loading-rgset, message = FALSE, warning = FALSE}
 # TODO: fix the variables
+rm(list = ls())
 targets <- read.metharray.sheet("./Input_data")
 RGset <- read.metharray.exp(targets = targets)
 save(RGset, file = "RGset.RData")
@@ -43,7 +44,6 @@ Optional: check in the manifest file if the address corresponds to a Type I or a
 
 For the optional procedure we will create two dataframes `type_I` and `type_II`, which will be reused later on for the normalization.
 ```{r step-3, message = FALSE, warning = FALSE}
-
 annotation <- RGset %>%
         getAnnotation() %>%
         data.frame() %>%
@@ -120,7 +120,7 @@ Calculate raw beta and M values and plot the densities of mean methylation value
 (suggestion: subset the beta and M values matrixes in order to retain DS or WT subjects and apply the function mean to the 2 subsets).
 
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
-```{r step-6-a, message=FALSE, warning=FALSE}
+```{r get-intensity, message=FALSE, warning=FALSE}
 beta <- MSet.raw %>%
         getBeta() %>%
         data.frame() %>%
@@ -134,8 +134,11 @@ m <- MSet.raw %>%
         pivot_longer(-Name, names_to = "Slide", values_to = "RawM") %>%
         setDT()
 
-methylData <- merge.data.table(beta, m)
-methylData <- merge.data.table(annotation, methylData, by = "Name")
+methylData <- annotation %>%
+        left_join(beta) %>%
+        left_join(m)
+
+
 # rm(m, beta, annotation, intensities)
 head(methylData)
 ```
@@ -143,13 +146,12 @@ We now add a column for the Sample status, which can be either Down Syndrome (`D
 ```{r step-6-b, message=FALSE, warning=FALSE}
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
 methylData %<>%
-        mutate(Group = if_else(Slide %in% paste("X", slide_DS, sep = ""), "DS", "WT"))
+        mutate(Group = if_else(Slide %in% paste("X", slide_DS, sep = ""), "DS", "WT"), .before = RawBeta)
 head(methylData)
 ```
 
 Computing the mean for $\beta$ and $M$ subsets and both groups
 ```{r intensity-plot, message=FALSE, warning=FALSE}
-par(mfrow = c(1, 2))
 rawBetaplot <- methylData %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
@@ -176,33 +178,37 @@ methylData <- RGset %>%
         preprocessSWAN() %>%
         getBeta() %>%
         data.frame() %>%
-        pivot_longer(everything()) %>%
-        select(NormBeta = value) %>%
-        add_column(methylData)
+        rownames_to_column(var = "Name") %>%
+        pivot_longer(-Name, values_to = "NormBeta", names_to = "Slide") %>%
+        left_join(methylData, ., by = c("Name", "Slide"))
 ```
 
 
 ```{r raw-vs-norm, message=FALSE, warning=FALSE}
-#par(mfrow = c(2, 3))
-arrangeGrob(ncol = 3, nrow = 2)
-rawBetaMean<- methylData %>%
+# Density plot for raw beta mean
+rawBetaMean <- methylData %>%
         group_by(Name, Type) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Type)) +
         xlim(0, 1)
 
-# Plotting raw beta standard deviatio for type I
-rawBetaSD<-methylData %>%
+# Density plot for raw beta standard deviation
+rawBetaSD <- methylData %>%
         group_by(Name, Type) %>%
         mutate(sd = sd(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
         geom_density(aes(color = Type))
 
-# Plotting Boxplot for Raw Data
-rawBetaBox<- methylData %>%
-  ggplot(aes(x = Slide, y = RawBeta)) +
-  geom_boxplot()
+# Boxplot for raw beta
+rawBetaBox <- methylData %>%
+        ggplot(aes(x = Slide, y = RawBeta)) +
+        geom_boxplot() +
+        theme(axis.text = element_blank()) +
+        xlab("Slide") +
+        ylab(expression("Raw" ~ beta ~ "value"))
+
+# Density plot for Normlized beta mean
 normBetaMean <- methylData %>%
         group_by(Name, Type) %>%
         mutate(mean = mean(NormBeta, na.rm = T)) %>%
@@ -210,16 +216,20 @@ normBetaMean <- methylData %>%
         geom_density(aes(color = Type)) +
         xlim(0, 1)
 
+# Density plot for Normlized beta standard deviation
 normBetaSD <- methylData %>%
         group_by(Name, Type) %>%
         mutate(sd = sd(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
         geom_density(aes(color = Type))
 
-# Boxplot for normalized bera values
+# Boxplot for normalized beta values
 normBetaBox <- methylData %>%
-  ggplot(aes(x = Slide, y = NormBeta)) +
-  geom_boxplot()
+        ggplot(aes(x = Slide, y = NormBeta)) +
+        geom_boxplot() +
+        theme(axis.text = element_blank()) +
+        xlab("Slide") +
+        ylab(expression("Normalized"~ beta ~"value"))
 
 grid.arrange(rawBetaMean, rawBetaSD, rawBetaBox, normBetaMean, normBetaSD, normBetaBox, nrow = 2)
 
@@ -399,6 +409,7 @@ methylData %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group)) +
         xlim(0, 1)
+
 ```
 Do you see a very clear difference between the samples?
 How many differentially methylated probes do you find on chromosome 21?
