@@ -4,8 +4,9 @@ author: Stefano Roncelli
 date: "`r format(Sys.time(), '%d/%m/%y')`"
 output: pdf_document
 ---
+
 # Introduction
-In this work we apply some basic concepts seen in the theory lessons and apply them on a dataset of Illymina methylation data.
+In this work we apply some basic concepts seen in the theory lessons on a dataset of Illymina methylation data.
 The dataset is composed of 8 slides, which are samples taken from four patients affected with down sydrome (`DS`) and four healthy wyld-type subjects (`WT`).
 
 Student N° 26
@@ -24,11 +25,10 @@ libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "fu
 
 We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which containes the intensities of the Red and Green channels.
 ```{r loading-rgset, message = FALSE, warning = FALSE}
-# TODO: fix the variables
-rm(list = ls())
+# rm(list = ls())
 targets <- read.metharray.sheet("./Input_data")
 RGset <- read.metharray.exp(targets = targets)
-save(RGset, file = "RGset.RData")
+# save(RGset, file = "RGset.RData")
 ```
 
 # Step 2
@@ -163,7 +163,7 @@ rawMplot <-methylData %>%
         mutate(mean = mean(RawM, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group))
-grid.arrange(rawBetaplot, rawMplot, nrow = 1)
+ grid.arrange(rawBetaplot, rawMplot, nrow = 1)
 ```
 
 # Step 7
@@ -230,7 +230,7 @@ normBetaBox <- methylData %>%
         theme(axis.text = element_blank()) +
         xlab("Slide") +
         ylab(expression("Normalized"~ beta ~"value"))
-
+# Arrange the plots in a 2x3 figure
 grid.arrange(rawBetaMean, rawBetaSD, rawBetaBox, normBetaMean, normBetaSD, normBetaBox, nrow = 2)
 
 ```
@@ -390,12 +390,12 @@ geom_point()
 
 ```{r manhattan, message=FALSE, warning=FALSE}
 manhattan_data <- methylData %>%
-        select(Name = Name, PvalRaw) %>%
-        distinct() %>%
-        merge(annotation, by = "Name") %>%
-        as.data.table() %>%
-        mutate(chr = numericCHR(chr))
-manhattan(manhattan_data, chr="chr", bp="pos", snp="Name", p="PvalRaw")
+  select(Name = Name, PvalRaw) %>%
+  distinct() %>%
+  merge(annotation, by = "Name") %>%
+  as.data.table() %>%
+  mutate(chr = numericCHR(chr))
+manhattan(manhattan_data, chr = "chr", bp = "pos", snp = "Name", p = "PvalRaw")
 ```
 
 
@@ -409,7 +409,6 @@ methylData %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group)) +
         xlim(0, 1)
-
 ```
 Do you see a very clear difference between the samples?
 How many differentially methylated probes do you find on chromosome 21?
