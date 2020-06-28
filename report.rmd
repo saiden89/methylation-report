@@ -2,68 +2,95 @@
 title: "A fundamental pipeline for methylation data analysis"
 author: Stefano Roncelli
 date: "`r format(Sys.time(), '%d/%m/%y')`"
-output: pdf_document
+output:
+      prettydoc::html_pretty:
+      theme: cayman
+
 ---
-
 # Introduction
-In this work we apply some basic concepts seen in the theory lessons on a dataset of Illymina methylation data.
-The dataset is a mixture of arrays coming from different slides, for a total of 8. This samplesare taken from four patients affected with down sydrome (`DS`) and four healthy wild-type subjects (`WT`).
+In this report we apply some basic concepts seen in the theory lessons on a dataset of Illumina methylation data.
+The dataset is a mixture of arrays coming from different slides, for a total of 8.
+The samples are taken from patients affected with down sydrome (`DS`) and healthy wild-type subjects (`WT`).
 
-I was assigned the following procedures to apply:
-Student N° 26
-Address 10633381
-p-value threshold: 0.01
-Normalization preprocessSWAN
-Mann_whitney test
+I was assigned the following parameters.
 
-Starting from scratch, we have to load the necessary packages. My approach relies on the `easypackages` library, which simplifies library loading procedures using a convenient synthax.
+| Parameter                |               Value |
+|:-------------------------|:-------------------:|
+| Student number           |                  26 |
+| Probe address            |            10633381 |
+| _p_-value threshold      |                0.01 |
+| Normalization            |      preprocessSWAN |
+| Parametric test          |   Mann-Whitney test |
+
+# Library loading
+Starting from scratch, we have to load the necessary packages. This approach relies on the `easypackages` library, which simplifies library loading procedures using a simple syntax.
 
 ```{r library-loading, message = FALSE, warning = FALSE}
 setwd('.')
 library(easypackages)
-libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table",  "quantsmooth", "qqman", "gridExtra")
+libraries("minfi", "RColorBrewer", "gap", "gplots", "tidyverse", "magrittr", "future.apply", "data.table",  "quantsmooth", "qqman", "gridExtra", "knitr", "pander")
 ```
-Load raw data with minfi and create an object called RGset storing the RGChannelSet object.
+# Loading raw data
+> Load raw data with minfi and create an object called RGset storing the RGChannelSet object.
 
-We can now load the experimental data store in the folder `Input_data`. We also create the `RGset` object, which contains the intensities of the Red and Green channels. `Minfi` provides a set of useful functions to read the files.
+We can now load the experimental data store in the folder `Input_data`.
+After that, we create the `RGset` object, which contains the intensities of the Red and Green channels.
+`Minfi` provides a set of useful functions to read the input files.
 ```{r loading-rgset, message = FALSE, warning = FALSE}
 targets <- read.metharray.sheet("./Input_data")
 RGset <- read.metharray.exp(targets = targets)
 ```
 
-# Step 2
-We create the dataframes Red and Green to store the red and green fluorescences respectively, using the functions `getGreen` and `getRed`.
-```{r loading-green-red, message = FALSE, warning = FALSE}
-Red <- data.frame(getRed(RGset))
-Green <- data.frame(getGreen(RGset))
-```
+# Red and Green fluorescence
+> Create the dataframes Red and Green to store the red and green fluorescences respectively.
 
-# Step 3
-Fill the following table: what are the Red and Green fluorescences for the address assigned to you?
+For this part we use the functions `getGreen` and `getRed`.
+Furthermore, we introduce a new operator: the `magrittr` pipe operator `%>%`, which is used to chain the functions used for data transformation.
+This approach avoids the unnecessary creation of intermediate objects, which has the double benefit to avoid waste of resources and effectively improves code readability.
+Objects will be created only when strictly necessary.
+Besides the use of the `%>%` operator, the pipeline also relies on the functionalities provided by the `tidyverse`, a collection of R packages with a common framework to analyse, manipulate and visualize all sorts of data.
+```{r loading-green-red, message = FALSE, warning = FALSE}
+Red <- RGset %>%
+        getRed() %>% # Is equal to getRed(RGset)
+        as.data.frame() # To what obtained the previous line, apply the as.data.frame() function
+pander(head(Red)) # Pander just outputs a nice pretty table
+Green <- RGset %>%
+        getGreen() %>%
+        as.data.frame()
+pander(head(Green))
+```
+It is worth noting that we didn't have to specify the arguments, but just call the functions without any argument, since the magrittr operator defaults the input for the function as the first argument.
+
+> Fill the table for address `10633381`.
 Optional: check in the manifest file if the address corresponds to a Type I or a Type II probe and, in case of Type I probe, report its color.
 
-The first step is to read the annotation from the Illumina manifest. For the rest of the report, my approach will heavily rely on the use of the pipe `%>%` operator, which is a very convenient synthax to chain function for data transformation. This approach avoids the unnecessary creation of mid-step objects, which has the double benefit to avoid the waste of resources and effectively improves code readability. I will create objects only when strictly necessary.
-Besides the use of the `%>%` operator, my pipeline also relies on the functionalities provided by the `tidyverse`, a collection of R packages with a common framework to analyse, manipulate and visualize all sorts of data.
-I preferred the use of datatables instead of the ordinary dataframes for their excellent performances for bigger datasets, such as our case.
-Conveniently, they also support all the function callable to the dataframes, as well as added functionality.
-```{r step-3, message = FALSE, warning = FALSE}
+The first step is to extract the annotation from the Illumina manifest.
+The preferential use of `data.tables` instead of the ordinary `data.frames` is motivated by their excellent performances for bigger datasets, such as our case, both in terms of memory and computational costs for their manipulation.
+Moreover, they also support all the functions callable on dataframes, as well as added features.
+```{r annotation, message = FALSE, warning = FALSE}
+# Extract basic annotation
 annotation <- RGset %>% # The RGset object is passed as argument the next function
         getAnnotation() %>% # This function gets the annotation for the probes present in the RGset
-        data.frame() %>% # We first convert the annotation to dataframe
-        data.table() %>% # And the to datatable, otherwise it raises an error
-        select(Name, chr, pos, Type, AddressA, AddressB) # From this we select on the columens which we are going to use
-head(annotation)
-annotation[AddressA== 10633381 | AddressB == 10633381] # DT have a very simple synthax
-Red[rownames(Red) == '10633381',]
-Green[rownames(Green) == '10633381',]
-annotation[, c("AddressA", "AddressB") := NULL] # The operator := work like the <- operator, but in data tables. We erase the addresse's columns, since we won't need it anymore.
+        as.data.frame() %>% # We first convert the annotation to dataframe
+        setDT() %>% # Then to data.table, otherwise it raises an error
+        select(Name, chr, pos, Type, AddressA, AddressB) # Select only relevant columns
+pander(head(annotation))
 ```
 
+Now that we have a basic `annotation` datatable, whe can query it for the specified address.
+The operator `:=` works like the `<-` operator, but for data tables. We use it to erase the addresses' columns, since they're needed it anymore.
+```{r address}
+pander(Red[rownames(Red) == '10633381',])
+pander(Green[rownames(Green) == '10633381',])
+pander(annotation[AddressA== 10633381 | AddressB == 10633381]) # DT have a very simple synthax
+annotation[, c("AddressA", "AddressB") := NULL]
+```
 
-
+It's a type I probe, so it only reports the red channel.
+We can now fill the given table.
 
 | Sample               | Row | Column | Red Intensity | Green Intensity | Type | Color |
-|----------------------|-----|--------|---------------|-----------------|------|-------|
+|----------------------|-----|--------|---------------|:---------------:|------|:-----:|
 | 5775278051           | 1   | 1      | 1852          | 458             | I    | Red   |
 | 5775278051           | 4   | 2      | 1694          | 631             | I    | Red   |
 | 5775278078           | 2   | 1      | 1354          | 358             | I    | Red   |
@@ -73,41 +100,65 @@ annotation[, c("AddressA", "AddressB") := NULL] # The operator := work like the 
 | 5930514035           | 4   | 2      | 894           | 354             | I    | Red   |
 | 5930514035           | 6   | 2      | 1149          | 479             | I    | Red   |
 
-# Step 4
-Create the object MSet.raw
-For the creation of the MSet.raw we use the `preprocessRaw `function
-```{r step-4}
+# Mset.raw creation
+> Create the object MSet.raw.
+
+For the creation of the MSet.raw we use the `preprocessRaw `function.
+```{r mset.raw}
 MSet.raw <- preprocessRaw(RGset)
 ```
 
-# Step 5
-Perform the following quality checks and provide a brief comment to each step:
+# Quality control
+> Perform the following quality checks and provide a brief comment to each step.
 
-
+The `getQC` plots the methylated median intensity agains the unmethylated median intensity.
 ```{r qc}
 qc <- getQC(MSet.raw)
 plotQC(qc)
 ```
+All the samples are above the dashed line, meaning that the intensities are behaving as expected.
+That is, the median intensity for the methylated probes is above the unmethylated ones.
 
-- check the intensity of negative controls using minfi
+> Check the intensity of negative controls using minfi.
 
+A very straightforward approach relies on the `controlStripPlot` function.
 ```{r strip-plot}
 controlStripPlot(RGset, controls = "NEGATIVE")
 ```
-- calculate detection pValues; for each sample, how many probes have a detection p-value higher than the threshold assigned to each student?
-The function to use is detectionP, which takes as input the RGset.
 
+For some reason, the color of the probes is inverted.
+All the negatives are below background level (< 10 in log space), meaning that every slide passes the quality control.
+Moreover, the intensities are consistent between the two channels.
+
+> Calculate detection pValues.
+For each sample, how many probes have a detection p-value higher than the threshold assigned to each student?
+
+The function to use is `detectionP`, which takes as input the RGset.
+Some transformations of the dataset will be better explained in the next chunk.
+However, we do so to facilitate the subsequent step of filtering out the failed probes, which is not really necessary given their scarcity but is nice nonetheless.
 ```{r failed-probes, message=FALSE, warning=FALSE}
-detection_p_value <- detectionP(RGset)
-dim(detection_p_value)
-failed_probes <- detection_p_value > 0.01
-table(failed_probes)
-summary(failed_probes)
+# Get the p-values
+failed_probes <- RGset %>%
+        detectionP() %>%
+        as.data.frame()
+
+# Get a summary for the details
+probes_summary <- failed_probes > 0.01
+summary(probes_summary)
+
+# Keep transforming
+failed_probes %<>%
+        rownames_to_column(var = "Name") %>%
+        pivot_longer(-Name, names_to = "Slide", values_to = "PvalFailed") %>% # Convert to long format
+        setDT() %>%
+        filter(PvalFailed > 0.01)
+
+pander(summary(failed_probes))
 ```
 The following table summarizes the failed positions
 
-| Sample | Group |      Slide | Row | Col  | Failed probes (p-value > 0.01) |
-|--------|-------|------------|-----|------|--------------------------------|
+| Sample | Group |      Slide | Row | Col | Failed probes (p-value > 0.01) |
+|--------|-------|------------|:---:|:----:|:------------------------------:|
 | 1020   | DS    | 5775278051 | 1   | 1    |                            323 |
 | 1036   | DS    | 5775278051 | 4   | 2    |                            260 |
 | 3038   | WT    | 5775278078 | 2   | 1    |                            312 |
@@ -118,106 +169,122 @@ The following table summarizes the failed positions
 | 3029   | WT    | 5930514035 | 6   | 2    |                            149 |
 
 
-# Step 6
-Calculate raw beta and M values and plot the densities of mean methylation values, dividing the samples in DS and WT
-(suggestion: subset the beta and M values matrixes in order to retain DS or WT subjects and apply the function mean to the 2 subsets).
+# Raw intensities
+> Calculate raw beta and M values and plot the densities of mean methylation values, dividing the samples in DS and WT.
 
-The following chunk will create the object "methylData", which will be our faithful companion for the rest of the report.
+The following chunk will create the object `methyl_data`, which will be our faithful companion for the rest of the report.
 This object will store as columns all the produced relevant data.
 For the retrieval of the $\beta$ and $M$ values we use the `getBeta` and `getM` functions respectively.
-We begin by creating the `beta` object which will contain the beta values from the `RGset`.
+We begin by creating the `beta` and `m` objects which will contain the beta values and m values from the `RGset`.
+Then, we proceed in merging the dataframe to obtain `methyl_data`.
 ```{r get-intensity, message=FALSE, warning=FALSE}
+# Extraction of beta
 beta <- MSet.raw %>% # Get the object Mset.raw
         getBeta() %>% # Get the beta
-        data.frame() %>% # Transform it into dataframe
+        as.data.frame() %>% # Transform it into dataframe
         rownames_to_column(var = "Name") %>% # Create a new column called Name that stores the rownames
         pivot_longer(-Name, names_to = "Slide", values_to = "RawBeta") %>% # Transform from wide to long format
-        setDT() # Converto to datatable
+        setDT() # Convert to datatable
 
+# Extraction of M
 m <- MSet.raw %>% # Same for the m values
         getM() %>%
-        data.frame() %>%
+        as.data.frame() %>%
         rownames_to_column(var = "Name") %>%
         pivot_longer(-Name, names_to = "Slide", values_to = "RawM") %>%
         setDT()
 
-methylData <- annotation %>%
-        left_join(beta) %>%
-        left_join(m)
+# Join the datasets
+methyl_data <- annotation %>%
+        left_join(beta, by = "Name") %>%
+        left_join(m, by = c("Name","Slide")) %>%
+        anti_join(failed_probes, by = "Name") # Filter out failed probes
 
+rm(m, beta, annotation) # Object are no longer necessary
 
-rm(m, beta, annotation, intensities) # Object are no longer necessary
-head(methylData)
+# Lo and behold
+pander(head(methyl_data))
 ```
-The generation of an intermediate dataframe is necessary to avoid the loss of the probe names, which is stored as a `rowname`. Before pivoting the dataframe, each column refers to a single slide of the experiment, and each row to a single probe. After the transformation we can see that now each row is an independent observation, and that the new column `Slide` stores the name of the original value. This format is much more convenient to work with, and, most importantly, allows the expansion of the data table with new data.
-```{r}
+The intermediate conversion to dataframe is necessary to avoid the loss of the probe names when converting again to `data.table`, since they are stored as `rownames` and not really supported in datatables.
+Before pivoting the dataframe, each column refers to a single slide of the experiment, and each row to a single probe. This was already seen when manipulating the `failed_probes`, and is called a wide format.
+After the transformation we can see that now each row is an independent observation, and that the new column `Slide` stores the name of the original value. This type of format is usually referred to as long format
+The latter is much more convenient to work with, and, most importantly, allows the addition of new columns rather easily.
+We also removed all the failed probes by name: this means that if a probe failed on a slide, it is removed also from all the other slides.
 
-```
-We now add a column for the Sample status, which can be either Down Syndrome (`DS`) or WildType(`WT`).
-The new operator `%<>%` work similarly to the `%>%`, but also assigns the data to the object that is pass though the pipe.
-The `mutate` function performs data transformation on the object and add a new column to store the new data. We can also specify in which position to add the new `Group` column. The discrimination of `WT` and `DS` is implemented via the `if_else` function, which has two different returns based on the boolean evaluation provided as the first argument.
+We now add a column for the Sample status, which can be either Down-Syndrome (`DS`) or Wild-Type(`WT`).
+The new operator `%<>%` work similarly to `%>%`, but also assigns the data to the object that is passed through the pipe.
+The `mutate` function performs data transformation on the object and adding a new column for the new values.
+We can also specify in which position to add the new `Group` column. The discrimination of `WT` and `DS` is implemented via the `if_else` function, which has two different returns based on the boolean evaluation provided as the first argument.
 
-```{r step-6-b, message=FALSE, warning=FALSE}
+```{r add-groups, message=FALSE, warning=FALSE}
+# Adding the Group
 slide_DS <- colnames(RGset[,targets$Group == "WT"])
-methylData %<>%
-        mutate(Group = if_else(Slide %in% paste("X", slide_DS, sep = ""), "DS", "WT"), .before = RawBeta)
-head(methylData)
+methyl_data %<>%
+        mutate(Group = if_else(Slide %in% slide_DS, "DS", "WT"), .before = RawBeta)
+pander(head(methyl_data))
 ```
 
-We can now generate the density plots for the `WT` and `DS` groups. The `group_by` function conveniently groups the observations (rows) by their value in the specified columns. Once again, the use of piping avoids the creation on unnecessary subsets.
-For the plot we will use the tools provided by `ggplot2`, which uses a convenient synthax for the creation of the plots.
+## Plotting raw intesities
+We can now generate the density plots for the `WT` and `DS` groups. The `group_by` function groups the observations (rows) by their value in the specified columns. Once again, the use of piping avoids the creation on unnecessary subsets (and lack of creativity for their naming).
+For the plot we will use the tools provided by `ggplot2`, which uses a very straightforward syntax.
 ```{r intensity-plot, message=FALSE, warning=FALSE}
-rawBetaplot <- methylData %>%
+# Plotting raw intensities
+rawBetaplot <- methyl_data %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group)) +
         xlim(0, 1)
-rawMplot <-methylData %>%
+rawMplot <-methyl_data %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(RawM, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Group))
-grid.arrange(rawBetaplot, rawMplot, nrow = 1)
+grid.arrange(rawBetaplot, rawMplot, ncol = 2)
 ```
-We can see how there is little to no difference between the two groups for both the M and the $beta$ values densities.
 
-# Step 7
-Normalize the data using the function assigned to each student and compare raw data and normalized data.
-Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
-Provide a short comment regarding the changes you observe.
+We can see how there is little to no difference between the two groups for both the $M$ and the $\beta$ values densities.
 
-My assigned function is the `preprocessSWAN`. The new `left_join` functions handles the joining the two datasets by their common columns. The `.` indicates the destination of the pipe. When not present, is defaults in the first position of the called function, but in this case we need to join the results of the normalization to the `methylData`, and not the other way around.
+# Normalization
+> Normalize the data using the function assigned to each student and compare raw data and normalized data.
+
+My assigned function is the `preprocessSWAN`.
+The new `left_join` functions handles the joining the two datasets by their common columns. The `.` indicates the destination of the pipe. When not present, is defaults in the first position of the called function, but in this case we need to join the results of the normalization to the `methylData`, and not the other way around.
 ```{r normalization, message=FALSE, warning=FALSE}
 # Normalization with preprocessSWAN
-methylData <- RGset %>%
+methyl_data <- RGset %>%
         preprocessSWAN() %>%
         getBeta() %>%
-        data.frame() %>%
+        as.data.frame() %>%
         rownames_to_column(var = "Name") %>%
         pivot_longer(-Name, values_to = "NormBeta", names_to = "Slide") %>%
-        left_join(methylData, ., by = c("Name", "Slide"))
+        anti_join(failed_probes, by = "Name") %>%
+        left_join(methyl_data, ., by = c("Name", "Slide"))
 ```
 
+> Produce a plot with 6 panels in which, for both raw and normalized data, you show the density plots of beta mean values according to the chemistry of the probes, the density plot of beta standard deviation values according to the chemistry of the probes and the boxplot of beta values.
+>
 We can now produce the plots and arrange the in a two by three fashion.
 ```{r raw-vs-norm, message=FALSE, warning=FALSE}
 # Density plot for raw beta mean
-rawBetaMean <- methylData %>%
+rawBetaMean <- methyl_data %>%
         group_by(Name, Type) %>%
         mutate(mean = mean(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Type)) +
-        xlim(0, 1)
+        xlim(0, 1) +
+        xlab(expression("Raw"~ beta ~ "mean"))
 
 # Density plot for raw beta standard deviation
-rawBetaSD <- methylData %>%
+rawBetaSD <- methyl_data %>%
         group_by(Name, Type) %>%
         mutate(sd = sd(RawBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
-        geom_density(aes(color = Type))
+        geom_density(aes(color = Type)) +
+        xlab(expression("Raw"~ beta ~ "standard deviation"))
 
 # Boxplot for raw beta
-rawBetaBox <- methylData %>%
+rawBetaBox <- methyl_data %>%
         ggplot(aes(x = Slide, y = RawBeta)) +
         geom_boxplot() +
         theme(axis.text = element_blank()) +
@@ -225,22 +292,24 @@ rawBetaBox <- methylData %>%
         ylab(expression("Raw" ~ beta ~ "value"))
 
 # Density plot for Normlized beta mean
-normBetaMean <- methylData %>%
+normBetaMean <- methyl_data %>%
         group_by(Name, Type) %>%
         mutate(mean = mean(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = mean)) +
         geom_density(aes(color = Type)) +
-        xlim(0, 1)
+        xlim(0, 1) +
+        xlab(expression("Normlized"~ beta ~ "mean"))
 
 # Density plot for Normlized beta standard deviation
-normBetaSD <- methylData %>%
+normBetaSD <- methyl_data %>%
         group_by(Name, Type) %>%
         mutate(sd = sd(NormBeta, na.rm = T)) %>%
         ggplot(aes(x = sd)) +
-        geom_density(aes(color = Type))
+        geom_density(aes(color = Type)) +
+        xlab(expression("Normlized"~ beta ~ "standard deviation"))
 
 # Boxplot for normalized beta values
-normBetaBox <- methylData %>%
+normBetaBox <- methyl_data %>%
         ggplot(aes(x = Slide, y = NormBeta)) +
         geom_boxplot() +
         theme(axis.text = element_blank()) +
@@ -249,101 +318,116 @@ normBetaBox <- methylData %>%
 
 # Arrange the plots in a 2x3 figure
 grid.arrange(rawBetaMean, rawBetaSD, rawBetaBox, normBetaMean, normBetaSD, normBetaBox, nrow = 2)
-
 ```
-The normalization is far from perfect, but at least it made the two types of probes more comparable to one another.
+> Provide a short comment regarding the changes you observe.
+>
+The normalization is far from perfect, but at least it made the two types of probes more comparable to one another. We can note how the standard deviations of type I probes tends to be higher than type II.
+It is also visible how the peak in the mean density distributions for type II are more central when compared to type I.
+All these behaviours are expected and depend on the different chemistries of the two probes.
 
-# Step 8
-Perform a PCA on the beta matrix generated in step 7. Comment the plot.
+# Principal component analysis (PCA)
+> Perform a PCA on the beta matrix generated in step 7. Comment the plot.
 
+To perform the Principal Component Analysis we use the `procomp` function. After obtaning the PCA results we manipulate them a bit to make them more plot friendly.
 ```{r pca-data, message=FALSE, warning=FALSE}
-pca_results <- methylData %>%
+pca_results <- methyl_data %>%
         select(Name, Slide, NormBeta) %>%
-        pivot_wider(names_from = "Name", values_from = "NormBeta") %>%
-        column_to_rownames(var = "Slide") %>%
-        prcomp(scale = T) %T>%
+        pivot_wider(names_from = "Slide", values_from = "NormBeta") %>%
+        column_to_rownames(var = "Name") %>%
+        t() %>%
+        prcomp(scale = TRUE) %T>%
         screeplot()
+
+pca_in <- data.table(pca_results$x) %>%
+        add_column(Group = targets$Group)
+
+ggplot(pca_in, aes(x = PC1, y = PC2, color = Group)) +
+        geom_point()
 ```
-We can see how the 8th component doesn't carry any variance at all.
+From the scree plot we can see that all the variance is encapsulated by the first seven principal components. The eight component indeed doesn't carry any variance. The `PC1` vs `PC2` plot shows that the two groups can be separated with just the second principal component. Indeed, low values of `PC2` seem to correlate with Wild-Type samples, and higher values of with Down-Syndrome samples.
 
-```{r pca-plot, message=FALSE, warning=FALSE}
-autoplot(pca_results, data = methylData)
+# Mann-Whitney U test
+> Identify differentially methylated probes between group DS and group WT using the Mann-Whitney U Test.
 
-palette("default")
-groups <- factor(targets$Group)
-plot(pca_results$x[, 1], pca_results$x[, 2],
-  pch = 16,
-  col = groups,
-  xlab = "PC1",
-  ylab = "PC2"
-)
-legend(
-  "bottomleft",
-  legend = levels(groups),
-  col = c(1:nlevels(groups)),
-  pch = 16
-)
-```
-Step 9
-Using the matrix of normalized beta values generated in step 7, identify differentially methylated probes between group DS and group WT using the functions assigned to each student.
-Note; it can take several minutes; if you encounter any problem you can run the differential methylated analysis only on a subset of probes (for example those on chromosome 1, 18 and 21)
-
-
+We first define our custom `mann_whitney` function to be applied to all the rows in the dataset.
+In order to speed up the process, we use the `future.apply` package, which has multithreading enabled variants of the standard R `*apply` functions.
+Better yet, the `future` versions have exactly the same syntax as the default functions.
+_Note_: this allows to compute all the rown in under 4 minutes!
 ```{r mann-whitney, message=FALSE, warning=FALSE}
+groups <- factor(targets$Group)
+
+# Custom function for the U test
 mann_whitney <- function(x) {
   wilcox <- wilcox.test(x ~ groups)
   return(wilcox$p.value)
 }
-plan(multisession)
 
-methylData %<>%
+plan(multisession) # Enables multithreading
+
+methyl_data %<>%
         select(Name, Slide, NormBeta) %>%
         pivot_wider(names_from = Slide, values_from = NormBeta) %>%
         column_to_rownames(var = "Name") %>%
-        future_apply(1, mann_whitney) %>%
+        future_apply(1, mann_whitney) %>% # Future variant for multithreading
         data.frame() %>%
         rownames_to_column(var = "Name") %>%
         data.table() %>%
         setnames(".", "PvalRaw") %>%
-        left_join(methylData, ., by = "Name")
+        left_join(methyl_data, ., by = "Name")
 ```
-Step 10
-Apply multiple test correction and set a significant threshold of 0.01.
-How many probes do you identify as differentially methylated considering nominal pValues?
-How many after Bonferroni correction?
-How many after BH correction?
+# Multiple test correction
+> Apply multiple test correction and set a significant threshold of 0.01.
+
+We now have to account for multiple testing and adjust the p-values accordingly.
+Fortunately, the `p.adjust` function is already present.
 ```{r bh-bonf, message=FALSE, warning=FALSE}
-methylData %<>%
+# Benjamini-Hockberg
+methyl_data %<>%
         mutate(PvalBH = p.adjust(PvalRaw,"BH"))
-methylData %<>%
+# Bonferroni
+methyl_data %<>%
         mutate(PvalBonf = p.adjust(PvalRaw,"bonferroni"))
 ```
+> How many probes do you identify as differentially methylated considering nominal pValues?
+> How many after Bonferroni correction? How many after BH correction?
 
+We can do a preliminar check by using a boxplot.
 ```{r pvalue-plot, message=FALSE, warning=FALSE}
-methylData %>%
+methyl_data %>%
         select(PvalRaw, PvalBH, PvalBonf) %>%
         pivot_longer(everything(), names_to = "Method", values_to = "Pval") %>%
         ggplot(aes(x = Method, y = Pval)) +
         geom_boxplot() +
         ylim(0, 1)
 ```
-Step 11
-Produce an heatmap of the top 100 differentially mehtylated probes
+
+The boxplot for the Raw p-values and the adjusted p-values clearly indicates that the correction was too aggressive. All the p-values adjusted with the Benjamini-Hockberg method are well above the significance threshold; even worse, the Bonferroni correction brought all the p-values to 1!
+To make sure there are no artifact in the plot, we check again by querying the `methyl_data`.
+```{r}
+methyl_data[PvalRaw < 0.01 | PvalBH < 0.01 | PvalBonf < 0.01]
+```
+Nothing to see here, we move along.
+
+# Heatmaps
+> Produce an heatmap of the top 100 differentially mehtylated probes.
+
+After the correction, the only p-values that remain usable are the uncorrected ones.
+We will select the probes with the 100 lowest p-values (_i.e._ the most significant ones) and produce three different heatmaps using complete linkage, single linkage and average linkage for the calculation of the new distances.
 ```{r heatmaps, message=FALSE, warning=FALSE}
-plot_data<- methylData %>%
+# Preparation of the input dataset
+heatmap_in <- methyl_data %>%
         select(Name, Slide, NormBeta, PvalRaw) %>%
         pivot_wider(names_from = Slide, values_from = NormBeta) %>%
         column_to_rownames(var = 'Name') %>%
-        slice_min(PvalRaw, with_ties = F, n = 100) %>%
+        slice_min(PvalRaw, with_ties = F, n = 100) %>% # Selecting the 100 lowest p-values
         select(-PvalRaw) %>%
         as.matrix()
 
-colorbar <- c("orange", "orange", "#008080", "#008080", "#008080", "orange", "orange", "#008080")
+colorbar <- c("orange", "orange", "#008080", "#008080", "#008080", "orange", "orange", "#008080") # Some fancy color
 palette <- brewer.pal(100, name = "Greys")
-par(mfrow = c(1, 3))
 
-# complete linkage
-heatmap.2(plot_data,
+# Complete linkage
+heatmap.2(heatmap_in,
           col = palette,
           Rowv = T,
           Colv = T,
@@ -354,10 +438,10 @@ heatmap.2(plot_data,
           trace = "none",
           scale = "none",
           symm = F,
-          main = "Normalized Beta values - complete linkage")
+          main = expression("Normalized"~ beta ~"value - complete linkage"))
 
 # Single linkage
-heatmap.2(plot_data,
+heatmap.2(heatmap_in,
           col = palette,
           Rowv = T,
           Colv = T,
@@ -369,9 +453,10 @@ heatmap.2(plot_data,
           trace = "none",
           scale = "none",
           symm = F,
-          main = "Norm Beta values (Method: single linkage)")
-# averge linkage
-heatmap.2(plot_data,
+          main = expression("Normalized"~ beta ~"value - single linkage"))
+
+# Averge linkage
+heatmap.2(heatmap_in,
           col = palette,
           Rowv = T,
           Colv = T, hclustfun = function(x) hclust(x, method = 'average'),
@@ -381,15 +466,19 @@ heatmap.2(plot_data,
           trace = "none",
           scale = "none",
           symm = F,
-          main = "Norm Beta values (Method: average linkage)")
-
+          main = expression("Normalized"~ beta ~"value - average linkage"))
 ```
 
+The slides appear to be correctly clustered: the orange refers to the Down Syndrome samples, and the teal to the Wild-Type.
+Moreover, there aren't any appreciable differences between the different linkage methods.
 
-Step 12
-Produce a volcano plot and a Manhattan plot of the results of differential methylation analysis
+# Volcano plot
+> Produce a volcano plot of the results of differential methylation analysis.
+
+To produce the volcano plot we will need two addtional values: the difference in average methylation(`delta`) for each probe among the two groups and the $-log_10$ of the _p_-value(`log_p`).
 ```{r volcano, message=FALSE, warning=FALSE}
-delta <- methylData %>%
+# Difference in methylation accross Group
+delta <- methyl_data %>%
                 select(Name, NormBeta, Slide, Group) %>%
                 group_by(Name, Group) %>%
                 summarise(mean = mean(NormBeta, na.rm = T)) %>%
@@ -397,33 +486,50 @@ delta <- methylData %>%
                 summarise(Delta = diff(mean)) %>%
                 select(Delta)
 
-logbeta <- methylData %>%
+# Negative Log p value extraction
+log_p <- methyl_data %>%
         select(Name, PvalRaw) %>%
         distinct() %>%
         select(PvalRaw) %>%
         log10() %>%
         transmute(PvalRaw = -PvalRaw)
-volplot_data <- cbind(delta, logbeta)
-ggplot(data = volplot_data, aes(Delta, PvalRaw)) +
-geom_point()
+
+# Plot input
+volplot_in <- cbind(delta, log_p)
+
+# Plotting
+ggplot(data = volplot_in, aes(Delta, PvalRaw)) +
+        geom_point() +
+        geom_hline(yintercept = -log10(0.01), colorbar = "red")
 ```
 
+Unfortunately, the Mann-Whytney U test made the volcano plot look more like a foggy morning than an actual volcano.
+Nevertheless, once again we clearsy observe that no probe is above the significance threshold (the red line).
+
+# Manhattan plot
+> Produce a Manhattan plot of the results of differential methylation analysis.
+
+For producing the manhattan plot we will use the `manhattan` function from the `qqman` package, which releases us from the hassle of reordering the chromosomes.
+Unfortunately, this function is designed to work with differently structured data, so we will need to transform it a little bit. In particular, we will use the `numericCHR` function from the `quantsmooth` package to convert the chromosomes values.
 ```{r manhattan, message=FALSE, warning=FALSE}
-manhattan_data <- methylData %>%
-  select(Name = Name, PvalRaw) %>%
-  distinct() %>%
-  merge(annotation, by = "Name") %>%
-  as.data.table() %>%
-  mutate(chr = numericCHR(chr))
-manhattan(manhattan_data, chr = "chr", bp = "pos", snp = "Name", p = "PvalRaw")
+# Data preparation
+manhattan_in <- methyl_data %>%
+        select(Name = Name, chr, pos, PvalRaw) %>%
+        distinct() %>%
+        as.data.table() %>%
+        mutate(chr = numericCHR(chr))
+
+# Plotting
+manhattan(manhattan_in, chr = "chr", bp = "pos", snp = "Name", p = "PvalRaw")
 ```
 
+Also the Manhattan plot suffers from the U test. The sexual chromosome are reported as 98 (X) and 99 (Y). We can tell because of the much smalled amount of probes on the Y chromosome, which is indeed much smaller when compared to the X chromosome.
+# Chromosome 21
+> As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
 
-Step 13 (optional)
-As DS is caused by the trisomy of chromosome 21, try also to plot the density of the methylation values of the probes mapping on chromosome 21.
-Do you see a very clear difference between the samples?
+First, we plot the density distribution for $\beta$ for the two groups.
 ```{r chr21, message=FALSE, warning=FALSE}
-methylData %>%
+methyl_data %>%
         filter(chr == "chr21") %>%
         group_by(Name, Group) %>%
         mutate(mean = mean(NormBeta, na.rm = T)) %>%
@@ -431,14 +537,14 @@ methylData %>%
         geom_density(aes(color = Group)) +
         xlim(0, 1)
 ```
+> Do you see a very clear difference between the samples?
 
-```{r}
-methylDiffChr21 <- filter(methylData, chr == "chr21") %>%
-  group_by(Group, Name) %>%
-  summarise(mean = mean(NormBeta, na.rm = T)) %>%
-  group_by(Name) %>%
-  summarise(Delta = diff(mean))
+By looking at the distribution, it seems that there is no difference between the two groups.
 
+> How many differentially methylated probes do you find on chromosome 21?
+
+We already know that there are no significant probes, however, just for the sake of exercising we will double check.
+```{r double-check}
+methyl_data[chr == "chr21" & PvalRaw < 0.01]
 ```
-How many differentially methylated probes do you find on chromosome 21?
-
+As expected, the previous command return an empty result. No probes in chromosome 21 are above the 0.01 significance threshold.
